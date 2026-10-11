@@ -1,0 +1,3 @@
+# Copy to terraform.tfvars (git-ignored).
+alert_email      = "you@example.com"
+telegram_chat_id = "123456789"
