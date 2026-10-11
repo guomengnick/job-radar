@@ -207,7 +207,9 @@ var (
 	daysInRE    = regexp.MustCompile(`(?i)\b(\d|one|two|three|four|five)\s*(?:\(\d\)\s*)?days?\s*(?:in|at)\s*(?:the|our)?\s*office`)
 	onceWeekRE  = regexp.MustCompile(`(?i)once (?:a|per) week|每週\s*(?:一次|1\s*天)`)
 	zhDaysRE    = regexp.MustCompile(`每週\s*(\d(?:\.\d)?)\s*天`)
-	wordNums    = map[string]float64{"one": 1, "two": 2, "three": 3, "four": 4, "five": 5}
+	// Read right after a "N days in the office" match.
+	perMonthRE = regexp.MustCompile(`(?i)^\W*(?:(?:per|a|each|every)\s+month|monthly)`)
+	wordNums   = map[string]float64{"one": 1, "two": 2, "three": 3, "four": 4, "five": 5}
 )
 
 // HybridDaysPerWeek reads the in-office frequency a JD states, if any.
@@ -216,14 +218,16 @@ func HybridDaysPerWeek(text string) (float64, bool) {
 		v, _ := strconv.ParseFloat(m[1], 64)
 		return v, true
 	}
-	for _, re := range []*regexp.Regexp{weeklyNumRE, daysInRE} {
-		if m := re.FindStringSubmatch(text); m != nil {
-			if v, ok := wordNums[strings.ToLower(m[1])]; ok {
-				return v, true
-			}
-			v, _ := strconv.ParseFloat(m[1], 64)
-			return v, true
+	if m := weeklyNumRE.FindStringSubmatch(text); m != nil {
+		return dayCount(m[1]), true
+	}
+	if m := daysInRE.FindStringSubmatchIndex(text); m != nil {
+		v := dayCount(text[m[2]:m[3]])
+		// "3 days in the office per month" is a monthly figure.
+		if perMonthRE.MatchString(text[m[1]:]) {
+			return v / 4, true
 		}
+		return v, true
 	}
 	if onceWeekRE.MatchString(text) {
 		return 1, true
@@ -232,4 +236,12 @@ func HybridDaysPerWeek(text string) (float64, bool) {
 		return 0.25, true
 	}
 	return 0, false
+}
+
+func dayCount(s string) float64 {
+	if v, ok := wordNums[strings.ToLower(s)]; ok {
+		return v
+	}
+	v, _ := strconv.ParseFloat(s, 64)
+	return v
 }

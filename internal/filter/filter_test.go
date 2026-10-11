@@ -146,6 +146,9 @@ func TestHybridDaysPerWeek(t *testing.T) {
 		"come in two (2) days per week": 2,
 		"每週 2 天進辦公室":                    2,
 		"we meet monthly":               0.25,
+		// A count followed by "per month" is monthly, not weekly (career-ops
+		// checks "per month" first and reads this as monthly too).
+		"3 days in the office per month": 0.75,
 	}
 	for in, want := range cases {
 		got, ok := HybridDaysPerWeek(in)
