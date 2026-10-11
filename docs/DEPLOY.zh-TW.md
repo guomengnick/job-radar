@@ -1,0 +1,102 @@
+# 部署步驟
+
+全程約 1 小時。第 1–3 步要你本人操作，因為牽涉建立帳號、付款方式和密鑰。
+
+## 1. 建立 AWS 帳號並先設預算
+
+1. 到 aws.amazon.com 建立帳號，開啟 root 帳號的 MFA。
+2. 在 IAM Identity Center 建一個自己日常使用的管理員使用者，之後不要再用 root 登入。
+3. 主控台 → Billing → Budgets，先手動建一個每月 5 美元的預算告警。Terraform 之後還會再建一個 10 美元的。
+
+## 2. 安裝工具（Mac）
+
+```bash
+brew install awscli terraform
+```
+
+```bash
+aws configure sso
+```
+
+## 3. 建立 Telegram 機器人
+
+1. 在 Telegram 找 @BotFather，送出 `/newbot`，記下它給的 token。
+2. 傳任何一則訊息給你的新機器人，然後開下面這個網址，在回應裡找到 `chat.id`：
+
+```bash
+open "https://api.telegram.org/bot<你的token>/getUpdates"
+```
+
+3. 把 token 存進 SSM。之後由 Lambda 讀取，不會進入 git 或 Terraform state：
+
+```bash
+aws ssm put-parameter --region us-west-2 --name /job-radar/telegram-bot-token --type SecureString --value '<你的token>'
+```
+
+## 4. 建立放 Terraform state 的 bucket（只做一次）
+
+```bash
+aws s3api create-bucket --region us-west-2 --bucket job-radar-tfstate-<帳號ID> --create-bucket-configuration LocationConstraint=us-west-2
+```
+
+```bash
+aws s3api put-bucket-versioning --bucket job-radar-tfstate-<帳號ID> --versioning-configuration Status=Enabled
+```
+
+## 5. 部署
+
+```bash
+cd infra && cp backend.hcl.example backend.hcl && cp terraform.tfvars.example terraform.tfvars
+```
+
+編輯 `backend.hcl`（填入 bucket 名稱）和 `terraform.tfvars`（填入 Email 和 chat id），然後執行：
+
+```bash
+cd infra && terraform init -backend-config=backend.hcl
+```
+
+第一次 `init` 會產生 `infra/.terraform.lock.hcl`，裡面鎖定 provider 的版本。先補上 CI（Linux）用的雜湊，再把這個檔案 commit 進 git，之後本機、CI 和重建都會用同一版 provider：
+
+```bash
+cd infra && terraform providers lock -platform=darwin_arm64 -platform=linux_amd64
+```
+
+```bash
+make plan
+```
+
+確認 plan 列出的資源都正確後，再部署：
+
+```bash
+make apply
+```
+
+部署完成後，信箱會收到 SNS 的訂閱確認信，記得點確認，之後才收得到告警。
+
+## 6. 第一次載入看板，並建立基準線
+
+```bash
+for a in greenhouse lever ashby; do aws lambda invoke --function-name job-radar-sync --payload "{\"task\":\"sync-boards\",\"ats\":\"$a\"}" --cli-binary-format raw-in-base64-out /dev/stdout; done
+```
+
+第一天的掃描會把每個看板上現有的職缺記為「基準線」，不發通知。從第二天起，只會通知新出現的職缺。
+
+如果想手動測試摘要（只發送，不把職缺標成已通知）：
+
+```bash
+aws lambda invoke --function-name job-radar-digest --payload '{"task":"digest","dry_run":true}' --cli-binary-format raw-in-base64-out /dev/stdout
+```
+
+## 7. 驗收
+
+- [ ] Mac 關機一整天，08:40 手機照樣收到摘要。
+- [ ] CloudWatch 儀表板（網址見 `terraform output dashboard_url`）有圖表。
+- [ ] `terraform destroy` 之後再 `make apply`，可以完整重建。重建後要重新做第 6 步。
+
+## 不用的時候
+
+```bash
+cd infra && terraform destroy
+```
+
+這個指令會刪除全部資源，包括資料表裡的資料。SSM 參數和 state bucket 不在 Terraform 管理範圍內，要另外手動刪除。
