@@ -57,19 +57,33 @@ func Scan(ctx context.Context, d Deps, o ScanOptions) (store.Run, error) {
 		touched []store.Board
 		stopped bool
 	)
+	// Two cut-offs before the deadline: no new boards start inside the buffer,
+	// and fetches still in flight are cancelled halfway through it. A stalling
+	// server can hold one board for three 20 s attempts plus backoff, longer
+	// than the buffer, and must not use up the time needed to save the run.
 	stopAt := time.Time{}
+	fetchCtx := ctx
 	if !o.Deadline.IsZero() {
-		stopAt = o.Deadline.Add(-time.Duration(d.Cfg.Scan.DeadlineBufferSeconds) * time.Second)
+		buffer := time.Duration(d.Cfg.Scan.DeadlineBufferSeconds) * time.Second
+		stopAt = o.Deadline.Add(-buffer)
+		var cancel context.CancelFunc
+		fetchCtx, cancel = context.WithTimeout(ctx, o.Deadline.Add(-buffer/2).Sub(d.Now()))
+		defer cancel()
 	}
-	g, gctx := errgroup.WithContext(ctx)
+	g, gctx := errgroup.WithContext(fetchCtx)
 	g.SetLimit(d.Cfg.Scan.Concurrency)
 	for _, b := range due {
-		if (!stopAt.IsZero() && d.Now().After(stopAt)) || ctx.Err() != nil {
+		if (!stopAt.IsZero() && d.Now().After(stopAt)) || fetchCtx.Err() != nil {
 			stopped = true
 			break
 		}
 		g.Go(func() error {
 			res := d.scanBoard(gctx, src, b, o)
+			if fetchCtx.Err() != nil && (res.outcome != fetch.OK || res.storeErr != nil) {
+				// Cut off by this run's deadline, not by the board: leave it
+				// unrecorded so it is among the first boards next run.
+				return nil
+			}
 			mu.Lock()
 			defer mu.Unlock()
 			touched = append(touched, res.board)

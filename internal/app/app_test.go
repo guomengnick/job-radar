@@ -22,20 +22,26 @@ type fakeSource struct {
 	mu    sync.Mutex
 	jobs  map[string][]ats.Job
 	errs  map[string]error
+	stall map[string]bool // never answers; returns only when ctx is done
 	calls map[string]int
 }
 
 func (f *fakeSource) Name() string                { return "fake" }
 func (f *fakeSource) Host() string                { return "fake.test" }
 func (f *fakeSource) BoardURL(slug string) string { return "https://fake.test/" + slug }
-func (f *fakeSource) Fetch(_ context.Context, _ ats.Getter, slug string) ([]ats.Job, error) {
+func (f *fakeSource) Fetch(ctx context.Context, _ ats.Getter, slug string) ([]ats.Job, error) {
 	f.mu.Lock()
-	defer f.mu.Unlock()
 	f.calls[slug]++
-	if err := f.errs[slug]; err != nil {
+	stall, err, jobs := f.stall[slug], f.errs[slug], f.jobs[slug]
+	f.mu.Unlock()
+	if stall {
+		<-ctx.Done()
+		return nil, ctx.Err()
+	}
+	if err != nil {
 		return nil, err
 	}
-	return f.jobs[slug], nil
+	return jobs, nil
 }
 
 type clock struct{ t time.Time }
@@ -49,7 +55,7 @@ func setup(t *testing.T) (Deps, *fakeSource, *store.Memory, *clock) {
 		t.Fatal(err)
 	}
 	st := store.NewMemory()
-	src := &fakeSource{jobs: map[string][]ats.Job{}, errs: map[string]error{}, calls: map[string]int{}}
+	src := &fakeSource{jobs: map[string][]ats.Job{}, errs: map[string]error{}, stall: map[string]bool{}, calls: map[string]int{}}
 	clk := &clock{t: time.Date(2026, 10, 12, 0, 0, 0, 0, time.UTC)}
 	d := NewDeps(cfg, st, slog.New(slog.NewTextHandler(io.Discard, nil)), nil)
 	d.Sources = map[string]ats.Source{"fake": src}
@@ -141,6 +147,40 @@ func TestDeadlineMakesRunPartial(t *testing.T) {
 	run, _ := Scan(ctx, d, ScanOptions{ATS: "fake", Deadline: clk.t.Add(30 * time.Second)})
 	if run.Status != "partial" || run.BoardsChecked != 0 {
 		t.Fatalf("inside the buffer nothing should start: %+v", run)
+	}
+}
+
+// A board whose server stalls must not use up the time needed to save the
+// run: fetches still in flight are cancelled halfway through the deadline
+// buffer, the finished board is saved, and the stalled one stays unrecorded
+// so it is among the first boards next run.
+func TestDeadlineCancelsStalledFetch(t *testing.T) {
+	d, src, st, _ := setup(t)
+	d.Now = time.Now
+	d.Cfg.Scan.DeadlineBufferSeconds = 1
+	st.AddBoards(context.Background(), "fake", []string{"fast", "stalled"})
+	src.stall["stalled"] = true
+
+	start := time.Now()
+	deadline := start.Add(2 * time.Second)
+	ctx, cancel := context.WithDeadline(context.Background(), deadline) // as Lambda passes it
+	defer cancel()
+	run, err := Scan(ctx, d, ScanOptions{ATS: "fake", Deadline: deadline})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if time.Now().After(deadline.Add(-250 * time.Millisecond)) {
+		t.Fatalf("scan returned after %s; it must leave time before the %s deadline",
+			time.Since(start).Round(time.Millisecond), deadline.Sub(start))
+	}
+	if run.Status != "partial" || run.BoardsChecked != 1 || run.Outcomes["timeout"] != 0 {
+		t.Fatalf("run = %+v", run)
+	}
+	boards, _ := st.ListBoards(context.Background(), "fake")
+	for _, b := range boards {
+		if checked := !b.LastCheckedAt.IsZero(); checked != (b.Slug == "fast") {
+			t.Errorf("%s: recorded as checked = %v", b.Slug, checked)
+		}
 	}
 }
 
