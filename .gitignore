@@ -1,0 +1,22 @@
+/build/
+/.radar/
+
+# Go test binaries and coverage profiles
+*.test
+*.out
+
+# Terraform: state, variables and saved plans can hold secrets.
+# Do commit infra/.terraform.lock.hcl; copy the *.example files.
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+*.tfplan
+crash.log
+crash.*.log
+.terraform/
+.terraform.lock.hcl.bak
+infra/backend.hcl
+
+.env
+.DS_Store
