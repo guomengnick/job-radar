@@ -2,6 +2,7 @@ package ats
 
 import (
 	"context"
+	"html"
 	"strconv"
 	"time"
 )
@@ -57,7 +58,8 @@ func (s Greenhouse) Fetch(ctx context.Context, g Getter, slug string) ([]Job, er
 		jobs = append(jobs, Job{
 			ATS: s.Name(), Board: slug, ID: strconv.FormatInt(j.ID, 10),
 			Title: j.Title, URL: j.AbsoluteURL, Location: joinUnique(parts...),
-			Description: HTMLToText(j.Content), PostedAt: posted,
+			// Greenhouse escapes its HTML once more; undo that layer first.
+			Description: HTMLToText(html.UnescapeString(j.Content)), PostedAt: posted,
 		})
 	}
 	return jobs, nil

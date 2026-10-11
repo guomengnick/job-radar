@@ -94,10 +94,41 @@ func TestParsers(t *testing.T) {
 }
 
 func TestHTMLToText(t *testing.T) {
-	in := "&lt;p&gt;Build &lt;strong&gt;APIs&lt;/strong&gt;&amp;nbsp;in Go&lt;/p&gt;&lt;ul&gt;&lt;li&gt;Kafka&lt;/li&gt;&lt;/ul&gt;"
+	in := "<p>Build <strong>APIs</strong>&nbsp;in Go</p><ul><li>Kafka</li></ul>"
 	got := HTMLToText(in)
 	if !strings.Contains(got, "Build APIs in Go") || !strings.Contains(got, "Kafka") || strings.Contains(got, "<") {
 		t.Fatalf("got %q", got)
+	}
+}
+
+// jsonGetter answers every request with the same JSON body.
+type jsonGetter string
+
+func (g jsonGetter) GetJSON(_ context.Context, _ string, v any) error {
+	return json.Unmarshal([]byte(g), v)
+}
+
+// "<5 years" in a JD is text, not markup. It arrives as &lt; in Lever's HTML
+// and as &amp;lt; in Greenhouse's extra-escaped HTML; both must keep it.
+func TestEscapedTextSurvives(t *testing.T) {
+	cases := []struct {
+		src Source
+		g   Getter
+	}{
+		{Greenhouse{}, jsonGetter(`{"jobs":[{"id":1,"title":"T","absolute_url":"https://x/1",
+			"content":"&lt;li&gt;&amp;lt;5 years of &lt;b&gt;Go&lt;/b&gt;&lt;/li&gt;&lt;li&gt;Latency &amp;lt;10ms&lt;/li&gt;"}]}`)},
+		{Lever{}, jsonGetter(`[{"id":"a","text":"T","hostedUrl":"https://x/a",
+			"lists":[{"text":"Requirements","content":"<li>&lt;5 years of <b>Go</b></li><li>Latency &lt;10ms</li>"}]}]`)},
+	}
+	for _, tc := range cases {
+		jobs, err := tc.src.Fetch(context.Background(), tc.g, "acme")
+		if err != nil || len(jobs) != 1 {
+			t.Fatalf("%s: jobs=%d err=%v", tc.src.Name(), len(jobs), err)
+		}
+		d := jobs[0].Description
+		if !strings.Contains(d, "<5 years of Go") || !strings.Contains(d, "Latency <10ms") {
+			t.Errorf("%s lost escaped text: %q", tc.src.Name(), d)
+		}
 	}
 }
 
