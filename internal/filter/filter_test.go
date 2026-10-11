@@ -40,6 +40,40 @@ func TestTitleFilter(t *testing.T) {
 	}
 }
 
+// The word: and stem: prefixes mirror career-ops title-keywords.mjs; the
+// examples come from its comments.
+func TestTitleKeywordPrefixes(t *testing.T) {
+	cases := []struct {
+		keyword, title string
+		want           bool
+	}{
+		{"word:intern", "Operations Intern", true},
+		{"word:intern", "Senior Software Engineer, Internal Systems", false},
+		{"word:intern", "International Partnerships Manager", false},
+		{"word:intern", "Préinternship", false}, // an accented letter is part of the word
+		{"stem:agent", "Agentforce Developer", true},
+		{"stem:agent", "Agentic Systems Engineer", true},
+		{"stem:agent", "Reagents Specialist", false},
+		{"agent", "Reagents Specialist", true}, // bare keywords stay substrings
+		{"word:rust", "Rust Engineer", true},
+		{"word:rust", "Trust & Safety Manager", false},
+		{"word:", "Anything", false}, // a bare prefix matches nothing, never everything
+		{"Word:Intern", "Operations Intern", true},
+	}
+	for _, tc := range cases {
+		if got := NewTitleFilter([]string{tc.keyword}, nil).Match(tc.title); got != tc.want {
+			t.Errorf("positive %q on %q: got %v, want %v", tc.keyword, tc.title, got, tc.want)
+		}
+	}
+	// As a negative, a bare "word:" must not veto every title.
+	if !NewTitleFilter(nil, []string{"word:"}).Match("Backend Engineer") {
+		t.Error("a bare prefix in negative vetoed a title")
+	}
+	if NewTitleFilter([]string{"word:go + backend"}, nil).Match("Golang Backend Engineer") {
+		t.Error("an AND term keeps its own prefix")
+	}
+}
+
 // Location strings are real values seen in career-ops scan-history.tsv and
 // in the recorded fixtures.
 func TestLocationClassifier(t *testing.T) {
