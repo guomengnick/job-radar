@@ -1,0 +1,95 @@
+[
+ {
+  "additional": "",
+  "additionalPlain": "",
+  "categories": {
+   "commitment": "Full Time",
+   "location": "Taipei",
+   "team": "Legal and Compliance",
+   "allLocations": [
+    "Taipei"
+   ]
+  },
+  "createdAt": 1790100000000,
+  "descriptionPlain": "About us\nAcme Robotics builds autonomous mobile robots for warehouses in Asia and Europe. Our software team runs the fleet platform that keeps every robot connected.\n\n我們正在尋找法遵專員，負責維護內部政策與作業流程。\n",
+  "description": "",
+  "id": "b0000000-0000-4000-8000-000000000001",
+  "lists": [
+   {
+    "text": "工作內容",
+    "content": "<p><strong>一、法遵制度維護</strong></p>\n\n<li>維護法遵政策、作業流程與內部文件。</li>\n<li>追蹤各部門的改善進度。</li>"
+   }
+  ],
+  "text": "Compliance Specialist 法遵專員",
+  "country": "TW",
+  "workplaceType": "hybrid",
+  "opening": "<p><strong><span style=\"font-size: 16px;\">About us</span></strong></p>\n<p>Acme Robotics builds autonomous mobile robots for warehouses in Asia and Europe. Our software team runs the fleet platform that keeps every robot connected.</p>",
+  "openingPlain": "About us\nAcme Robotics builds autonomous mobile robots for warehouses in Asia and Europe. Our software team runs the fleet platform that keeps every robot connected.\n",
+  "descriptionBody": "<p>我們正在尋找具備法遵或風險管理經驗的夥伴。</p>",
+  "descriptionBodyPlain": "",
+  "hostedUrl": "https://jobs.lever.co/AcmeRobotics/b0000000-0000-4000-8000-000000000001",
+  "applyUrl": "https://jobs.lever.co/AcmeRobotics/b0000000-0000-4000-8000-000000000001/apply"
+ },
+ {
+  "additional": "",
+  "additionalPlain": "",
+  "categories": {
+   "commitment": "Full Time",
+   "location": "Taipei",
+   "team": "Engineering",
+   "allLocations": [
+    "Taipei"
+   ]
+  },
+  "createdAt": 1791300000000,
+  "descriptionPlain": "About us\nAcme Robotics builds autonomous mobile robots for warehouses in Asia and Europe. Our software team runs the fleet platform that keeps every robot connected.\n\nThe Data Ingestion team moves telemetry from thousands of robots into our platform every second.\n",
+  "description": "",
+  "id": "b0000000-0000-4000-8000-000000000002",
+  "lists": [
+   {
+    "text": "Responsibilities",
+    "content": "\n<li>Design, build, and operate Go services that ingest robot telemetry.</li>\n<li>Run Kafka consumers with clear retry and dead-letter handling.</li>\n<li>Keep PostgreSQL schemas fast for time-series queries.</li>\n"
+   }
+  ],
+  "text": "Backend Engineer - Data Ingestion (Platform Team)",
+  "country": "TW",
+  "workplaceType": "hybrid",
+  "opening": "<p><strong><span style=\"font-size: 16px;\">About us</span></strong></p>\n<p>Acme Robotics builds autonomous mobile robots for warehouses in Asia and Europe. Our software team runs the fleet platform that keeps every robot connected.</p>",
+  "openingPlain": "About us\nAcme Robotics builds autonomous mobile robots for warehouses in Asia and Europe. Our software team runs the fleet platform that keeps every robot connected.\n",
+  "descriptionBody": "<p>The Data Ingestion team moves telemetry from thousands of robots into our platform every second.</p>",
+  "descriptionBodyPlain": "The Data Ingestion team moves telemetry from thousands of robots into our platform every second.\n",
+  "hostedUrl": "https://jobs.lever.co/AcmeRobotics/b0000000-0000-4000-8000-000000000002",
+  "applyUrl": "https://jobs.lever.co/AcmeRobotics/b0000000-0000-4000-8000-000000000002/apply"
+ },
+ {
+  "additional": "",
+  "additionalPlain": "",
+  "categories": {
+   "commitment": "Full Time",
+   "location": "Bangkok",
+   "team": "Business Development",
+   "allLocations": [
+    "Bangkok"
+   ]
+  },
+  "createdAt": 1772000000000,
+  "descriptionPlain": "About us\nAcme Robotics builds autonomous mobile robots for warehouses in Asia and Europe. Our software team runs the fleet platform that keeps every robot connected.\n\nWe are opening our first office in Bangkok.\n",
+  "description": "",
+  "id": "b0000000-0000-4000-8000-000000000003",
+  "lists": [
+   {
+    "text": "Key Responsibilities",
+    "content": "\n<li>Grow the customer base for warehouse automation in Thailand.</li>\n<li>Work with the solutions team on proposals.</li>\n"
+   }
+  ],
+  "text": "Business Development Manager - Thailand",
+  "country": "TH",
+  "workplaceType": "hybrid",
+  "opening": "<p><strong><span style=\"font-size: 16px;\">About us</span></strong></p>\n<p>Acme Robotics builds autonomous mobile robots for warehouses in Asia and Europe. Our software team runs the fleet platform that keeps every robot connected.</p>",
+  "openingPlain": "About us\nAcme Robotics builds autonomous mobile robots for warehouses in Asia and Europe. Our software team runs the fleet platform that keeps every robot connected.\n",
+  "descriptionBody": "<div><strong style=\"font-size: 16px;\">About us</strong></div>\n<div>We are opening our first office in Bangkok.</div>",
+  "descriptionBodyPlain": "About us\nWe are opening our first office in Bangkok.\n",
+  "hostedUrl": "https://jobs.lever.co/AcmeRobotics/b0000000-0000-4000-8000-000000000003",
+  "applyUrl": "https://jobs.lever.co/AcmeRobotics/b0000000-0000-4000-8000-000000000003/apply"
+ }
+]

@@ -1,0 +1,148 @@
+{
+ "jobs": [
+  {
+   "absolute_url": "https://job-boards.greenhouse.io/acme/jobs/4100001",
+   "data_compliance": [
+    {
+     "type": "gdpr",
+     "requires_consent": false,
+     "requires_processing_consent": false,
+     "requires_retention_consent": false,
+     "retention_period": null,
+     "demographic_data_consent_applies": false
+    }
+   ],
+   "internal_job_id": 300001,
+   "location": {
+    "name": "Tokyo, Japan"
+   },
+   "metadata": null,
+   "id": 4100001,
+   "updated_at": "2026-08-05T03:12:37-04:00",
+   "requisition_id": null,
+   "title": "Field Robotics Engineer｜ロボット導入エンジニア",
+   "company_name": "Acme Robotics",
+   "first_published": "2026-07-29T21:14:22-04:00",
+   "language": "en",
+   "application_deadline": null,
+   "content": "&lt;p&gt;【倉庫ロボットの導入を支える】&lt;br&gt;Acme Robotics では、物流倉庫向けの自律移動ロボットを導入・保守するエンジニアを募集しています。&lt;/p&gt;\n&lt;ul&gt;\n&lt;li&gt;現地での導入計画と立ち上げ&lt;/li&gt;\n&lt;li&gt;お客様向けのトレーニング&lt;/li&gt;\n&lt;/ul&gt;",
+   "departments": [
+    {
+     "id": 7001,
+     "name": "Field Operations",
+     "child_ids": [],
+     "parent_id": 7000
+    }
+   ],
+   "offices": [
+    {
+     "id": 8001,
+     "name": "Tokyo, Japan",
+     "location": "Tokyo, Japan",
+     "child_ids": [],
+     "parent_id": null
+    }
+   ],
+   "ai_disclaimer": null,
+   "include_ai_disclaimer": null,
+   "ai_opt_out_request_url": null
+  },
+  {
+   "absolute_url": "https://job-boards.greenhouse.io/acme/jobs/4100002",
+   "data_compliance": [
+    {
+     "type": "gdpr",
+     "requires_consent": false,
+     "requires_processing_consent": false,
+     "requires_retention_consent": false,
+     "retention_period": null,
+     "demographic_data_consent_applies": false
+    }
+   ],
+   "internal_job_id": 300002,
+   "location": {
+    "name": "Taipei, Taiwan"
+   },
+   "metadata": null,
+   "id": 4100002,
+   "updated_at": "2026-06-22T06:29:17-04:00",
+   "requisition_id": null,
+   "title": "Backend Engineer, Fleet Data - Taiwan",
+   "company_name": "Acme Robotics",
+   "first_published": "2025-06-20T02:18:10-04:00",
+   "language": "en",
+   "application_deadline": null,
+   "content": "&lt;p&gt;&lt;strong&gt;About Acme Robotics&amp;nbsp;&lt;/strong&gt;&lt;/p&gt;\n&lt;p&gt;&lt;span style=&quot;font-weight: 400;&quot;&gt;Acme Robotics builds autonomous mobile robots for warehouses. Our fleet platform collects telemetry from every robot and turns it into maintenance alerts.&lt;/span&gt;&lt;/p&gt;\n&lt;p&gt;&lt;strong&gt;What you will do&lt;/strong&gt;&lt;/p&gt;\n&lt;ul&gt;\n&lt;li&gt;Build Go services that ingest robot telemetry over MQTT and Kafka.&lt;/li&gt;\n&lt;li&gt;Design PostgreSQL schemas for time-series data.&lt;/li&gt;\n&lt;li&gt;Share on-call for the ingestion pipeline.&lt;/li&gt;\n&lt;/ul&gt;",
+   "departments": [
+    {
+     "id": 7002,
+     "name": "Platform Engineering",
+     "child_ids": [],
+     "parent_id": 7000
+    }
+   ],
+   "offices": [
+    {
+     "id": 8002,
+     "name": "Taipei, Taiwan",
+     "location": "Taipei, Taiwan",
+     "child_ids": [],
+     "parent_id": null
+    }
+   ],
+   "ai_disclaimer": null,
+   "include_ai_disclaimer": null,
+   "ai_opt_out_request_url": null
+  },
+  {
+   "absolute_url": "https://job-boards.greenhouse.io/acme/jobs/4100003",
+   "data_compliance": [
+    {
+     "type": "gdpr",
+     "requires_consent": false,
+     "requires_processing_consent": false,
+     "requires_retention_consent": false,
+     "retention_period": null,
+     "demographic_data_consent_applies": false
+    }
+   ],
+   "internal_job_id": 300003,
+   "location": {
+    "name": "Seoul, South Korea"
+   },
+   "metadata": null,
+   "id": 4100003,
+   "updated_at": "2026-03-31T06:38:14-04:00",
+   "requisition_id": null,
+   "title": "Account Manager, South Korea",
+   "company_name": "Acme Robotics",
+   "first_published": "2020-01-16T22:10:24-05:00",
+   "language": "en",
+   "application_deadline": null,
+   "content": "&lt;p&gt;&lt;/p&gt;\n&lt;div&gt;&lt;strong&gt;About Acme Robotics&lt;/strong&gt;&lt;/div&gt;\n&lt;div&gt;We are hiring an account manager to grow our customer base in South Korea.&lt;/div&gt;",
+   "departments": [
+    {
+     "id": 7003,
+     "name": "Account Management",
+     "child_ids": [],
+     "parent_id": 7000
+    }
+   ],
+   "offices": [
+    {
+     "id": 8003,
+     "name": "Seoul, South Korea",
+     "location": "Seoul, South Korea",
+     "child_ids": [],
+     "parent_id": null
+    }
+   ],
+   "ai_disclaimer": null,
+   "include_ai_disclaimer": null,
+   "ai_opt_out_request_url": null
+  }
+ ],
+ "meta": {
+  "total": 3
+ }
+}

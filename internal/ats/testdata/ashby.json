@@ -1,0 +1,63 @@
+{
+ "jobs": [
+  {
+   "id": "c0000000-0000-4000-8000-000000000001",
+   "title": "Platform Engineer",
+   "department": "Platform",
+   "team": "Platform",
+   "employmentType": "FullTime",
+   "location": "Remote, Global",
+   "secondaryLocations": [],
+   "publishedAt": "2026-07-31T18:56:39.246+00:00",
+   "isListed": true,
+   "isRemote": null,
+   "workplaceType": null,
+   "address": null,
+   "jobUrl": "https://jobs.ashbyhq.com/acme/c0000000-0000-4000-8000-000000000001",
+   "applyUrl": "https://jobs.ashbyhq.com/acme/c0000000-0000-4000-8000-000000000001/application",
+   "descriptionHtml": "",
+   "descriptionPlain": "ABOUT ACME ROBOTICS\n\nAcme Robotics builds autonomous mobile robots for warehouses. The platform team runs the services that connect every robot to the cloud.\n\nWHAT YOU WILL DO\n\n- Build and operate the deployment pipeline for our Go services.\n- Keep Terraform modules and AWS accounts tidy and secure.\n"
+  },
+  {
+   "id": "c0000000-0000-4000-8000-000000000002",
+   "title": "Solutions Architect (AMER)",
+   "department": "Success",
+   "team": "Success",
+   "employmentType": "FullTime",
+   "location": "Remote, AMER",
+   "secondaryLocations": [],
+   "publishedAt": "2024-11-14T17:58:07.662+00:00",
+   "isListed": true,
+   "isRemote": true,
+   "workplaceType": "Remote",
+   "address": {
+    "postalAddress": {}
+   },
+   "jobUrl": "https://jobs.ashbyhq.com/acme/c0000000-0000-4000-8000-000000000002",
+   "applyUrl": "https://jobs.ashbyhq.com/acme/c0000000-0000-4000-8000-000000000002/application",
+   "descriptionHtml": "",
+   "descriptionPlain": "Acme Robotics builds autonomous mobile robots for warehouses. As a solutions architect you help customers in the Americas plan their first robot fleet.\n"
+  },
+  {
+   "id": "c0000000-0000-4000-8000-000000000003",
+   "title": "Support Engineer (EMEA)",
+   "department": "Support",
+   "team": "Support",
+   "employmentType": "FullTime",
+   "location": "Remote, EMEA",
+   "secondaryLocations": [],
+   "publishedAt": "2025-05-30T20:36:32.528+00:00",
+   "isListed": true,
+   "isRemote": null,
+   "workplaceType": null,
+   "address": {
+    "postalAddress": {}
+   },
+   "jobUrl": "https://jobs.ashbyhq.com/acme/c0000000-0000-4000-8000-000000000003",
+   "applyUrl": "https://jobs.ashbyhq.com/acme/c0000000-0000-4000-8000-000000000003/application",
+   "descriptionHtml": "",
+   "descriptionPlain": "Acme Robotics builds autonomous mobile robots for warehouses. As a support engineer you keep customer fleets in Europe running.\n"
+  }
+ ],
+ "apiVersion": "1"
+}
