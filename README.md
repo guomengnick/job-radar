@@ -80,3 +80,8 @@ links for personal alerts and does not republish job descriptions. Board slugs
 come from the public
 [job-board-aggregator](https://github.com/Feashliaa/job-board-aggregator) dataset;
 check its license before redistributing anything derived from it.
+
+## License
+
+MIT. See [LICENSE](LICENSE). The license covers this repository's code only;
+the board dataset is fetched at run time and keeps its own license.
