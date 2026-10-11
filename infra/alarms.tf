@@ -61,29 +61,29 @@ resource "aws_cloudwatch_dashboard" "radar" {
       {
         type = "metric", x = 0, y = 0, width = 12, height = 6
         properties = {
-          title  = "Boards per day", region = var.region, stat = "Sum", period = 86400, view = "timeSeries"
+          title   = "Boards per day", region = var.region, stat = "Sum", period = 86400, view = "timeSeries"
           metrics = [for m in ["BoardsChecked", "BoardsNotFound", "BoardsThrottled", "BoardsFailed"] : ["JobRadar", m]]
         }
       },
       {
         type = "metric", x = 12, y = 0, width = 12, height = 6
         properties = {
-          title  = "New jobs / successful runs per day", region = var.region, stat = "Sum", period = 86400, view = "timeSeries"
+          title   = "New jobs / successful runs per day", region = var.region, stat = "Sum", period = 86400, view = "timeSeries"
           metrics = [["JobRadar", "JobsNew"], ["JobRadar", "RunSucceeded"]]
         }
       },
       {
         type = "metric", x = 0, y = 6, width = 12, height = 6
         properties = {
-          title  = "Scan duration (s)", region = var.region, stat = "Maximum", period = 86400, view = "timeSeries"
+          title   = "Scan duration (s)", region = var.region, stat = "Maximum", period = 86400, view = "timeSeries"
           metrics = [["JobRadar", "DurationSeconds"]]
         }
       },
       {
         type = "log", x = 12, y = 6, width = 12, height = 6
         properties = {
-          title  = "Latest scan results", region = var.region, view = "table"
-          query  = "SOURCE '/aws/lambda/job-radar-scan' | filter msg = 'scan finished' | fields @timestamp, ats, status, boards_checked, jobs_new | sort @timestamp desc | limit 20"
+          title = "Latest scan results", region = var.region, view = "table"
+          query = "SOURCE '/aws/lambda/job-radar-scan' | filter msg = 'scan finished' | fields @timestamp, ats, status, boards_checked, jobs_new | sort @timestamp desc | limit 20"
         }
       },
     ]
