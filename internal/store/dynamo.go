@@ -18,14 +18,23 @@ import (
 //	jobs:   PK key; sparse GSI "pending-index" (pending, first_seen) = unsent jobs
 //	runs:   PK pk="run", SK sk="<started_at>#<ats>"; TTL on expires_at
 type Dynamo struct {
-	db                 *dynamodb.Client
+	db                 DynamoAPI
 	boards, jobs, runs string
 	runTTL             time.Duration
 }
 
+// DynamoAPI is the part of *dynamodb.Client the store uses, so tests can
+// check the requests it sends without an AWS account.
+type DynamoAPI interface {
+	dynamodb.QueryAPIClient
+	PutItem(context.Context, *dynamodb.PutItemInput, ...func(*dynamodb.Options)) (*dynamodb.PutItemOutput, error)
+	UpdateItem(context.Context, *dynamodb.UpdateItemInput, ...func(*dynamodb.Options)) (*dynamodb.UpdateItemOutput, error)
+	BatchWriteItem(context.Context, *dynamodb.BatchWriteItemInput, ...func(*dynamodb.Options)) (*dynamodb.BatchWriteItemOutput, error)
+}
+
 const pendingIndex = "pending-index"
 
-func NewDynamo(db *dynamodb.Client, boardsTable, jobsTable, runsTable string) *Dynamo {
+func NewDynamo(db DynamoAPI, boardsTable, jobsTable, runsTable string) *Dynamo {
 	return &Dynamo{db: db, boards: boardsTable, jobs: jobsTable, runs: runsTable, runTTL: 90 * 24 * time.Hour}
 }
 
