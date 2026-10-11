@@ -1,0 +1,167 @@
+package store
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"sort"
+	"sync"
+	"time"
+)
+
+// Memory is an in-process Store. With a path it persists to a JSON file, so
+// local runs remember what they have seen; without one it is a test double.
+type Memory struct {
+	mu   sync.Mutex
+	path string
+	data memoryData
+}
+
+type memoryData struct {
+	Boards map[string]map[string]Board `json:"boards"`
+	Jobs   map[string]JobRecord        `json:"jobs"`
+	Runs   []Run                       `json:"runs"`
+}
+
+func NewMemory() *Memory {
+	return &Memory{data: memoryData{Boards: map[string]map[string]Board{}, Jobs: map[string]JobRecord{}}}
+}
+
+// OpenFile loads path if it exists; Flush writes it back atomically.
+func OpenFile(path string) (*Memory, error) {
+	m := NewMemory()
+	m.path = path
+	b, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return m, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(b, &m.data); err != nil {
+		return nil, err
+	}
+	if m.data.Boards == nil {
+		m.data.Boards = map[string]map[string]Board{}
+	}
+	if m.data.Jobs == nil {
+		m.data.Jobs = map[string]JobRecord{}
+	}
+	return m, nil
+}
+
+func (m *Memory) Flush() error {
+	if m.path == "" {
+		return nil
+	}
+	m.mu.Lock()
+	b, err := json.MarshalIndent(m.data, "", " ")
+	m.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(m.path), 0o755); err != nil {
+		return err
+	}
+	tmp := m.path + ".tmp"
+	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+		return err
+	}
+	return os.Rename(tmp, m.path)
+}
+
+func (m *Memory) ListBoards(_ context.Context, ats string) ([]Board, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]Board, 0, len(m.data.Boards[ats]))
+	for _, b := range m.data.Boards[ats] {
+		out = append(out, b)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Slug < out[j].Slug })
+	return out, nil
+}
+
+func (m *Memory) SaveBoards(_ context.Context, boards []Board) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, b := range boards {
+		if m.data.Boards[b.ATS] == nil {
+			m.data.Boards[b.ATS] = map[string]Board{}
+		}
+		m.data.Boards[b.ATS][b.Slug] = b
+	}
+	return nil
+}
+
+func (m *Memory) AddBoards(_ context.Context, ats string, slugs []string) (int, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.data.Boards[ats] == nil {
+		m.data.Boards[ats] = map[string]Board{}
+	}
+	added := 0
+	for _, s := range slugs {
+		if _, ok := m.data.Boards[ats][s]; !ok {
+			m.data.Boards[ats][s] = Board{ATS: ats, Slug: s, Status: BoardUnknown}
+			added++
+		}
+	}
+	return added, nil
+}
+
+func (m *Memory) InsertJobIfNew(_ context.Context, j JobRecord) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.data.Jobs[j.Key]; ok {
+		return false, nil
+	}
+	m.data.Jobs[j.Key] = j
+	return true, nil
+}
+
+func (m *Memory) PendingJobs(_ context.Context) ([]JobRecord, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []JobRecord
+	for _, j := range m.data.Jobs {
+		if j.State == JobNew {
+			out = append(out, j)
+		}
+	}
+	sort.Slice(out, func(i, k int) bool { return out[i].FirstSeen.Before(out[k].FirstSeen) })
+	return out, nil
+}
+
+func (m *Memory) MarkNotified(_ context.Context, keys []string, at time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, k := range keys {
+		if j, ok := m.data.Jobs[k]; ok {
+			j.State, j.NotifiedAt, j.Pending = JobNotified, at, ""
+			m.data.Jobs[k] = j
+		}
+	}
+	return nil
+}
+
+func (m *Memory) SaveRun(_ context.Context, r Run) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.data.Runs = append(m.data.Runs, r)
+	return nil
+}
+
+func (m *Memory) RunsSince(_ context.Context, since time.Time) ([]Run, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []Run
+	for _, r := range m.data.Runs {
+		if !r.StartedAt.Before(since) {
+			out = append(out, r)
+		}
+	}
+	return out, nil
+}

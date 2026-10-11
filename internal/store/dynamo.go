@@ -1,0 +1,224 @@
+package store
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/feature/dynamodb/attributevalue"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/service/dynamodb/types"
+)
+
+// Dynamo backs Store with three on-demand tables (see infra/dynamodb.tf):
+//
+//	boards: PK ats, SK slug
+//	jobs:   PK key; sparse GSI "pending-index" (pending, first_seen) = unsent jobs
+//	runs:   PK pk="run", SK sk="<started_at>#<ats>"; TTL on expires_at
+type Dynamo struct {
+	db                 *dynamodb.Client
+	boards, jobs, runs string
+	runTTL             time.Duration
+}
+
+const pendingIndex = "pending-index"
+
+func NewDynamo(db *dynamodb.Client, boardsTable, jobsTable, runsTable string) *Dynamo {
+	return &Dynamo{db: db, boards: boardsTable, jobs: jobsTable, runs: runsTable, runTTL: 90 * 24 * time.Hour}
+}
+
+func (d *Dynamo) ListBoards(ctx context.Context, ats string) ([]Board, error) {
+	p := dynamodb.NewQueryPaginator(d.db, &dynamodb.QueryInput{
+		TableName:                 &d.boards,
+		KeyConditionExpression:    aws.String("ats = :a"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{":a": &types.AttributeValueMemberS{Value: ats}},
+	})
+	var out []Board
+	for p.HasMorePages() {
+		page, err := p.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("list boards: %w", err)
+		}
+		var bs []Board
+		if err := attributevalue.UnmarshalListOfMaps(page.Items, &bs); err != nil {
+			return nil, err
+		}
+		out = append(out, bs...)
+	}
+	return out, nil
+}
+
+func (d *Dynamo) SaveBoards(ctx context.Context, boards []Board) error {
+	reqs := make([]types.WriteRequest, 0, len(boards))
+	for _, b := range boards {
+		item, err := attributevalue.MarshalMap(b)
+		if err != nil {
+			return err
+		}
+		reqs = append(reqs, types.WriteRequest{PutRequest: &types.PutRequest{Item: item}})
+	}
+	return d.batchWrite(ctx, d.boards, reqs)
+}
+
+func (d *Dynamo) AddBoards(ctx context.Context, ats string, slugs []string) (int, error) {
+	existing, err := d.ListBoards(ctx, ats)
+	if err != nil {
+		return 0, err
+	}
+	known := make(map[string]bool, len(existing))
+	for _, b := range existing {
+		known[b.Slug] = true
+	}
+	var fresh []Board
+	for _, s := range slugs {
+		if !known[s] {
+			known[s] = true
+			fresh = append(fresh, Board{ATS: ats, Slug: s, Status: BoardUnknown})
+		}
+	}
+	return len(fresh), d.SaveBoards(ctx, fresh)
+}
+
+// batchWrite sends 25 items per request and retries what DynamoDB hands back
+// as unprocessed (throttling) with a growing pause.
+func (d *Dynamo) batchWrite(ctx context.Context, table string, reqs []types.WriteRequest) error {
+	for start := 0; start < len(reqs); start += 25 {
+		chunk := reqs[start:min(start+25, len(reqs))]
+		pending := map[string][]types.WriteRequest{table: chunk}
+		for attempt := 0; len(pending[table]) > 0; attempt++ {
+			if attempt > 0 {
+				if attempt > 8 {
+					return fmt.Errorf("batch write %s: %d items still unprocessed", table, len(pending[table]))
+				}
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-time.After(time.Duration(50<<attempt) * time.Millisecond):
+				}
+			}
+			out, err := d.db.BatchWriteItem(ctx, &dynamodb.BatchWriteItemInput{RequestItems: pending})
+			if err != nil {
+				return fmt.Errorf("batch write %s: %w", table, err)
+			}
+			pending = out.UnprocessedItems
+		}
+	}
+	return nil
+}
+
+func (d *Dynamo) InsertJobIfNew(ctx context.Context, j JobRecord) (bool, error) {
+	if j.State == JobNew {
+		j.Pending = string(JobNew)
+	}
+	item, err := attributevalue.MarshalMap(j)
+	if err != nil {
+		return false, err
+	}
+	// The conditional put is both the "is it new?" check and the dedupe:
+	// two workers racing on the same posting cannot both insert it.
+	_, err = d.db.PutItem(ctx, &dynamodb.PutItemInput{
+		TableName:                &d.jobs,
+		Item:                     item,
+		ConditionExpression:      aws.String("attribute_not_exists(#k)"),
+		ExpressionAttributeNames: map[string]string{"#k": "key"},
+	})
+	var ccf *types.ConditionalCheckFailedException
+	if errors.As(err, &ccf) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("insert job: %w", err)
+	}
+	return true, nil
+}
+
+func (d *Dynamo) PendingJobs(ctx context.Context) ([]JobRecord, error) {
+	p := dynamodb.NewQueryPaginator(d.db, &dynamodb.QueryInput{
+		TableName:                 &d.jobs,
+		IndexName:                 aws.String(pendingIndex),
+		KeyConditionExpression:    aws.String("pending = :n"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{":n": &types.AttributeValueMemberS{Value: string(JobNew)}},
+	})
+	var out []JobRecord
+	for p.HasMorePages() {
+		page, err := p.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("pending jobs: %w", err)
+		}
+		var js []JobRecord
+		if err := attributevalue.UnmarshalListOfMaps(page.Items, &js); err != nil {
+			return nil, err
+		}
+		out = append(out, js...)
+	}
+	return out, nil
+}
+
+func (d *Dynamo) MarkNotified(ctx context.Context, keys []string, at time.Time) error {
+	ts, err := attributevalue.Marshal(at)
+	if err != nil {
+		return err
+	}
+	for _, k := range keys {
+		_, err := d.db.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+			TableName:                &d.jobs,
+			Key:                      map[string]types.AttributeValue{"key": &types.AttributeValueMemberS{Value: k}},
+			UpdateExpression:         aws.String("SET #s = :n, notified_at = :t REMOVE pending"),
+			ExpressionAttributeNames: map[string]string{"#s": "state"},
+			ExpressionAttributeValues: map[string]types.AttributeValue{
+				":n": &types.AttributeValueMemberS{Value: string(JobNotified)}, ":t": ts,
+			},
+		})
+		if err != nil {
+			return fmt.Errorf("mark notified %s: %w", k, err)
+		}
+	}
+	return nil
+}
+
+type runItem struct {
+	PK        string `dynamodbav:"pk"`
+	SK        string `dynamodbav:"sk"`
+	ExpiresAt int64  `dynamodbav:"expires_at"`
+	Run
+}
+
+func (d *Dynamo) SaveRun(ctx context.Context, r Run) error {
+	item, err := attributevalue.MarshalMap(runItem{
+		PK: "run", SK: r.StartedAt.UTC().Format(time.RFC3339) + "#" + r.ATS + "#" + r.Task,
+		ExpiresAt: r.StartedAt.Add(d.runTTL).Unix(), Run: r,
+	})
+	if err != nil {
+		return err
+	}
+	_, err = d.db.PutItem(ctx, &dynamodb.PutItemInput{TableName: &d.runs, Item: item})
+	return err
+}
+
+func (d *Dynamo) RunsSince(ctx context.Context, since time.Time) ([]Run, error) {
+	p := dynamodb.NewQueryPaginator(d.db, &dynamodb.QueryInput{
+		TableName:              &d.runs,
+		KeyConditionExpression: aws.String("pk = :p AND sk >= :s"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":p": &types.AttributeValueMemberS{Value: "run"},
+			":s": &types.AttributeValueMemberS{Value: since.UTC().Format(time.RFC3339)},
+		},
+	})
+	var out []Run
+	for p.HasMorePages() {
+		page, err := p.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("runs since: %w", err)
+		}
+		var items []runItem
+		if err := attributevalue.UnmarshalListOfMaps(page.Items, &items); err != nil {
+			return nil, err
+		}
+		for _, it := range items {
+			out = append(out, it.Run)
+		}
+	}
+	return out, nil
+}
