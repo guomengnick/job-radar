@@ -9,7 +9,9 @@ import (
 
 // TitleFilter mirrors career-ops title-keywords.mjs semantics so both systems
 // agree: lowercase substring match, 2–3 letter alphabetic keywords match whole
-// words only, and "a + b" requires both terms.
+// words only, and "a + b" requires both terms. A keyword can opt into word
+// boundaries: "word:intern" matches "Intern" but not "Internal", and
+// "stem:rust" matches words that start with "rust" but not "Trust".
 type TitleFilter struct {
 	positive []func(string) bool
 	negative []func(string) bool
@@ -18,12 +20,36 @@ type TitleFilter struct {
 var shortWordRE = regexp.MustCompile(`^[a-z]{2,3}$`)
 var andSepRE = regexp.MustCompile(`\s+\+\s+`)
 
+const (
+	wordPrefix  = "word:"
+	stemPrefix  = "stem:"
+	notWordChar = `[^\p{L}\p{M}\p{N}_]` // Unicode-aware, so "é" does not split a word
+)
+
 func compileKeyword(kw string) func(string) bool {
-	if shortWordRE.MatchString(kw) {
-		re := regexp.MustCompile(`(?:^|[^\p{L}\p{M}\p{N}_])` + regexp.QuoteMeta(kw) + `(?:$|[^\p{L}\p{M}\p{N}_])`)
-		return re.MatchString
+	switch {
+	case strings.HasPrefix(kw, wordPrefix):
+		return anchored(strings.TrimSpace(kw[len(wordPrefix):]), true)
+	case strings.HasPrefix(kw, stemPrefix):
+		return anchored(strings.TrimSpace(kw[len(stemPrefix):]), false)
+	case shortWordRE.MatchString(kw):
+		return anchored(kw, true)
 	}
 	return func(s string) bool { return strings.Contains(s, kw) }
+}
+
+// anchored matches kw where it starts a word and, with end, also ends one.
+// An empty kw (a bare "word:" typo) matches nothing: as a negative, matching
+// everything would veto every title.
+func anchored(kw string, end bool) func(string) bool {
+	if kw == "" {
+		return func(string) bool { return false }
+	}
+	pattern := `(?:^|` + notWordChar + `)` + regexp.QuoteMeta(kw)
+	if end {
+		pattern += `(?:$|` + notWordChar + `)`
+	}
+	return regexp.MustCompile(pattern).MatchString
 }
 
 func compilePositive(kw string) func(string) bool {

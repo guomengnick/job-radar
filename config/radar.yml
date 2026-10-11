@@ -4,7 +4,9 @@
 
 title:
   # Lowercased substring match; a 2–3 letter alphabetic keyword matches as a
-  # whole word only. "a + b" means both terms must appear.
+  # whole word only. "a + b" means both terms must appear. "word:x" matches x as
+  # a whole word ("word:intern" skips "Internal"); "stem:x" matches words that
+  # start with x ("stem:rust" skips "Trust"). Same syntax as career-ops.
   positive:
     - "Senior Software Engineer"
     - "Senior Software Developer"
