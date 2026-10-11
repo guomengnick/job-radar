@@ -10,8 +10,24 @@
 
 ## 2. 安裝工具（Mac）
 
+Homebrew 主倉庫已經沒有 terraform，要從 HashiCorp 官方的 tap 安裝：
+
 ```bash
-brew install awscli terraform
+brew install awscli
+```
+
+```bash
+brew tap hashicorp/tap
+```
+
+```bash
+brew install hashicorp/tap/terraform
+```
+
+確認版本至少是 1.10（`infra/versions.tf` 的要求，S3 state 鎖定需要這個版本）：
+
+```bash
+terraform version
 ```
 
 ```bash
