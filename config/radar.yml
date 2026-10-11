@@ -151,7 +151,8 @@ scan:
   concurrency: 16
   dead_after_404: 3
   dead_recheck_days: 7
-  # Stop starting new boards this long before the invocation deadline.
+  # Stop starting new boards this long before the invocation deadline, and
+  # cancel fetches still in flight halfway through it, so saving always has time.
   deadline_buffer_seconds: 60
 
 boards:
