@@ -57,10 +57,10 @@ var (
 	nlRE    = regexp.MustCompile(`\n{3,}`)
 )
 
-// HTMLToText strips markup well enough for keyword matching.
-// Greenhouse escapes its HTML once more, so unescape before and after.
+// HTMLToText strips markup well enough for keyword matching. Tags go first,
+// then entities, so escaped text such as "&lt;5 years" survives as "<5 years"
+// instead of being read as a tag. Callers pass ordinary HTML.
 func HTMLToText(s string) string {
-	s = html.UnescapeString(s)
 	s = blockRE.ReplaceAllString(s, "\n")
 	s = tagRE.ReplaceAllString(s, " ")
 	s = html.UnescapeString(s)
