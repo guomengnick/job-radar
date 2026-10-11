@@ -1,0 +1,164 @@
+# job-radar rules. Embedded into the binary at build time (go:embed), so a rule
+# change is a reviewed commit plus a redeploy — see docs/adr/README.md (ADR 8).
+# Title keywords mirror career-ops portals.yml title_filter as of 2026-10-11.
+
+title:
+  # Lowercased substring match; a 2–3 letter alphabetic keyword matches as a
+  # whole word only. "a + b" means both terms must appear.
+  positive:
+    - "Senior Software Engineer"
+    - "Senior Software Developer"
+    - "Backend Engineer"
+    - "Backend Software Engineer"
+    - "Backend Developer"
+    - "Integration Engineer"
+    - "Integration Software Engineer"
+    - "API Engineer"
+    - "C++"
+    - "C#"
+    - ".NET"
+    - "Python Engineer"
+    - "Systems Software Engineer"
+    - "Platform Software Engineer"
+    - "Infrastructure Software Engineer"
+    - "Software Development Engineer"
+    - "Embedded Software Engineer"
+    - "Camera Software Engineer"
+    - "Localization Engineer"
+    - "Motion Planning Engineer"
+    - "Control Software Engineer"
+    - "MES Engineer"
+    - "Release Engineer"
+    - "Build Engineer"
+    - "Developer Productivity Engineer"
+    - "Computer Vision Engineer"
+    - "Vision Engineer"
+    - "ML Vision Engineer"
+    - "Perception Engineer"
+    - "Robotics Software Engineer"
+    - "Algorithm Engineer"
+    - "Platform Engineer"
+    - "Data Platform"
+    - "Data Infrastructure"
+    - "Data Engineer"
+    - "Data Pipeline"
+    - "Ingestion"
+    - "Streaming"
+    - "Telemetry"
+    - "IoT"
+    - "IIoT"
+    - "Distributed Systems"
+    - "Golang"
+    - "Go Engineer"
+    - "Go Developer"
+    - "Go Backend"
+    - "Java Engineer"
+    - "Java Developer"
+    - "Java Backend"
+    - "Kotlin"
+    - "TypeScript"
+    - "Node.js"
+    - "NodeJS"
+    - "Rust"
+    - "Scala"
+    - "Server Engineer"
+    - "Server-side"
+    - "Software Engineer II"
+    - "Software Engineer III"
+    - "Software Engineer 3"
+  negative:
+    - "Principal"
+    - "Director"
+    - "Head of"
+    - "Architect"
+    - "Full Stack"
+    - "Fullstack"
+    - "Full-Stack"
+    - "Frontend"
+    - "Front-end"
+    - "Front End"
+    - "Mobile"
+    - "Junior"
+    - "Intern"
+    - "iOS"
+    - "Android"
+    - "Data Scientist"
+    - "Data Analyst"
+    - "Product Manager"
+    - "Project Manager"
+    - "Engineering Manager"
+    - "Solutions Engineer"
+    - "Sales Engineer"
+    - "Technical Account"
+    - "Customer Engineer"
+    - "Forward Deployed"
+    - "Field"
+    - "Support"
+    - "Quality Assurance"
+    - "Quality Engineer"
+    - "SDET"
+    - "in Test"
+    - "AI Trainer"
+    - "Trainer"
+    - "Test Automation"
+    - "Entry"
+    - "Associate"
+
+location:
+  # In-person days per week that are still acceptable (policy 2026-10-04).
+  taipei_hybrid_max_days: 2
+  hsinchu_hybrid_max_days: 2
+
+# Rough fit score: weights of matched skills in title + JD, capped at 100.
+# Any programming language is acceptable (2026-10-11), so a language the user
+# does not know is never a penalty — it simply earns nothing here.
+skills:
+  - { name: "C#", pattern: '(?i)c#', weight: 15 }
+  - { name: ".NET", pattern: '(?i)\.net\b', weight: 15 }
+  - { name: "C++", pattern: '(?i)c\+\+', weight: 15 }
+  - { name: "Python", pattern: '(?i)\bpython\b', weight: 10 }
+  - { name: "Kafka", pattern: '(?i)\bkafka\b', weight: 12 }
+  - { name: "PostgreSQL", pattern: '(?i)\bpostgres(?:ql)?\b', weight: 10 }
+  - { name: "SQL", pattern: '(?i)\bsql\b', weight: 4 }
+  - { name: "Data pipeline", pattern: '(?i)data pipelines?|etl\b|ingestion|event[- ]driven|streaming', weight: 10 }
+  - { name: "Distributed systems", pattern: '(?i)distributed systems?', weight: 6 }
+  - { name: "Backend/API", pattern: '(?i)\bback[- ]?end\b|\bapis?\b|microservices?', weight: 6 }
+  - { name: "Industrial/IoT", pattern: '(?i)industrial|manufacturing|factory|\biot\b|iiot|robotic|semiconductor|equipment|telemetry', weight: 10 }
+  - { name: "Observability", pattern: '(?i)grafana|prometheus|observability|monitoring', weight: 5 }
+  - { name: "Parquet/DuckDB", pattern: '(?i)parquet|duckdb', weight: 5 }
+  - { name: "Docker", pattern: '(?i)\bdocker\b', weight: 4 }
+  - { name: "Reliability", pattern: '(?i)idempoten|outbox|exactly[- ]once|at[- ]least[- ]once|fault[- ]toleran', weight: 6 }
+  - { name: "Performance", pattern: '(?i)performance|latency|memory (?:usage|footprint)|profil', weight: 4 }
+  - { name: "CI/CD", pattern: '(?i)ci/cd|continuous integration|build pipeline', weight: 3 }
+  - { name: "Linux", pattern: '(?i)\blinux\b', weight: 3 }
+  - { name: "Computer vision", pattern: '(?i)computer vision|opencv|image processing', weight: 6 }
+
+notify:
+  # Class A = explicitly open to Taiwan; class B = remote, country not stated.
+  class_a_min_score: 40
+  class_b_min_score: 60
+  max_items: 25
+
+scan:
+  # Requests per second per ATS API host, and boards fetched in parallel.
+  # 2026-10-11 local test: 900 boards per ATS at 15 rps, 16 in flight →
+  # 0 throttled. At 15 rps a full Greenhouse pass (8,334 boards) is ~9 minutes,
+  # inside Lambda's 15-minute limit. See docs/adr/README.md (ADR 5).
+  rps:
+    greenhouse: 15
+    lever: 15
+    ashby: 15
+  concurrency: 16
+  dead_after_404: 3
+  dead_recheck_days: 7
+  # Stop starting new boards this long before the invocation deadline.
+  deadline_buffer_seconds: 60
+
+boards:
+  # Public slug lists (one JSON array per ATS). Check its license before relying on it.
+  dataset_base: "https://raw.githubusercontent.com/Feashliaa/job-board-aggregator/main/data"
+  # Boards always tracked, even if missing from the dataset.
+  extra:
+    greenhouse: [appier, tenstorrent, anthropic, vercel, clickhouse, timescale, redpandadata, scylladb]
+    lever: [Gogolook, nahc]
+    ashby: [supabase, foxglove, applied]
