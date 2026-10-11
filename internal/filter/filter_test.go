@@ -32,6 +32,14 @@ func TestTitleFilter(t *testing.T) {
 		"Biotech Researcher":                                      false, // "iot" is a whole-word keyword
 		"C# Coding Specialist - Freelance AI Trainer Project":     false,
 		"Software Development Engineer in Test (Backend)":         false,
+		// word: keywords (2026-10-11), titles seen in a 1,500-board sample.
+		"Senior Software Engineer, Internal Systems": true, // not "intern"
+		"Senior Software Engineer - Architecture":    true, // not "architect"
+		"Software Engineer Internship":               false,
+		"Solutions Architect":                        false,
+		"Manager, Analytics (Trust & Safety)":        false, // not "rust"
+		"Escalations Specialist":                     false, // not "scala"
+		"Senior Rust Engineer":                       true,
 	}
 	for title, want := range cases {
 		if got := f.Match(title); got != want {
