@@ -1,7 +1,7 @@
 variable "region" {
-  description = "Target ATS APIs are US companies; a US region keeps request latency (and billed Lambda time) low. See ADR 6."
+  description = "The account's organization SCP allows only ap-southeast-2. The ATS APIs are in the US, but the scan is bound by the rate limit, not latency. See ADR 6."
   type        = string
-  default     = "us-west-2"
+  default     = "ap-southeast-2"
 }
 
 variable "alert_email" {

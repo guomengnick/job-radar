@@ -4,11 +4,20 @@
 
 ## 1. 建立 AWS 帳號並先設預算
 
-1. 到 aws.amazon.com 建立帳號，開啟 root 帳號的 MFA。
-2. 在 IAM Identity Center 建一個自己日常使用的管理員使用者，之後不要再用 root 登入。
-3. 主控台 → Billing → Budgets，先手動建一個每月 5 美元的預算告警。Terraform 之後還會再建一個 10 美元的。
+2026 年起，新帳號預設是「專案」模式，用 Google（AWS Builder ID）登入，跟舊教學的畫面不同。實際走過的流程：
 
-## 2. 安裝工具（Mac）
+1. 到 aws.amazon.com 註冊，選 Free plan 或 Paid plan。Free plan 最長 6 個月，之後要升級才能繼續用。
+2. 要用 Lambda、DynamoDB 這類服務，帳號要先升級成 Paid plan，再到「設定 → 專案」頁底部按「啟用進階功能」。這個動作**無法復原**，而且會**刪除支出限額**。
+3. 啟用後會建立一個組織，裡面有三個帳號：管理帳戶（帳單與政策）、Identity Delegated Admin（管理登入身分），以及原本的專案帳戶（radar 部署在這裡）。
+4. 組織預設掛一份 SCP（`AdvancedModeRegionRestrictionSecurityControlPolicy`），**只允許一個區域**。本帳號是 `ap-southeast-2`（雪梨），所以 radar 部署在雪梨，見 ADR 6。你的帳號可能不同，可以用下面這行逐區測試，有回 `TableNames` 的就是允許的區域：
+
+```bash
+for r in $(aws ec2 describe-regions --region us-east-1 --query 'Regions[].RegionName' --output text); do aws dynamodb list-tables --region $r >/dev/null 2>&1 && echo "$r 允許"; done
+```
+
+5. 在**管理帳戶**的 Billing → Budgets 建一個每月 10 美元的預算告警，補上被刪掉的支出限額。Terraform 之後還會在專案帳戶再建一個。
+
+## 2. 安裝工具並登入（Mac）
 
 Homebrew 主倉庫已經沒有 terraform，要從 HashiCorp 官方的 tap 安裝：
 
@@ -30,9 +39,25 @@ brew install hashicorp/tap/terraform
 terraform version
 ```
 
+先在瀏覽器登入專案帳戶，再讓 CLI 借用這個登入，取得幾小時後失效的暫時憑證，不需要建立 IAM 使用者或長期金鑰。`--region` 一定要填 SCP 允許的區域，填錯會出現「Something went wrong」：
+
 ```bash
-aws configure sso
+aws login --profile radar --region ap-southeast-2
 ```
+
+之後的指令都用這個 profile：
+
+```bash
+export AWS_PROFILE=radar
+```
+
+確認身分（應該看到 `assumed-role/AccountFullAccessRole/...`）：
+
+```bash
+aws sts get-caller-identity
+```
+
+憑證過期時，重新執行 `aws login --profile radar --region ap-southeast-2`。
 
 ## 3. 建立 Telegram 機器人
 
@@ -46,13 +71,13 @@ open "https://api.telegram.org/bot<你的token>/getUpdates"
 3. 把 token 存進 SSM。之後由 Lambda 讀取，不會進入 git 或 Terraform state：
 
 ```bash
-aws ssm put-parameter --region us-west-2 --name /job-radar/telegram-bot-token --type SecureString --value '<你的token>'
+aws ssm put-parameter --region ap-southeast-2 --name /job-radar/telegram-bot-token --type SecureString --value '<你的token>'
 ```
 
 ## 4. 建立放 Terraform state 的 bucket（只做一次）
 
 ```bash
-aws s3api create-bucket --region us-west-2 --bucket job-radar-tfstate-<帳號ID> --create-bucket-configuration LocationConstraint=us-west-2
+aws s3api create-bucket --region ap-southeast-2 --bucket job-radar-tfstate-<帳號ID> --create-bucket-configuration LocationConstraint=ap-southeast-2
 ```
 
 ```bash
