@@ -135,6 +135,12 @@ skills:
   - { name: "CI/CD", pattern: '(?i)ci/cd|continuous integration|build pipeline', weight: 3 }
   - { name: "Linux", pattern: '(?i)\blinux\b', weight: 3 }
   - { name: "Computer vision", pattern: '(?i)computer vision|opencv|image processing', weight: 6 }
+  # Cloud skills (2026-10-15). AWS scores because radar itself runs on AWS.
+  # Terraform and Kubernetes score 0: recorded on each job for the monthly
+  # "how many postings ask for this" count, without changing notifications.
+  - { name: "AWS", pattern: '(?i)\baws\b|amazon web services', weight: 10 }
+  - { name: "Terraform", pattern: '(?i)\bterraform\b', weight: 0 }
+  - { name: "Kubernetes", pattern: '(?i)\bkubernetes\b|\bk8s\b', weight: 0 }
 
 notify:
   # Class A = explicitly open to Taiwan; class B = remote, country not stated.
