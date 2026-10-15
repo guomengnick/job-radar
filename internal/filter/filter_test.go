@@ -177,6 +177,11 @@ func TestScore(t *testing.T) {
 	if score < 60 || len(matched) < 5 {
 		t.Fatalf("strong match scored %d %v", score, matched)
 	}
+	// Zero-weight skills are recorded without adding to the score.
+	cloud, cm := s.Score("Engineer", "We run Kubernetes on AWS with Terraform. Laws and drawstrings do not count.")
+	if cloud != 10 || len(cm) != 3 {
+		t.Fatalf("cloud skills scored %d %v, want 10 with AWS, Terraform, Kubernetes", cloud, cm)
+	}
 	low, _ := s.Score("Senior Backend Engineer", "Ruby on Rails and React.")
 	if low >= 20 {
 		t.Fatalf("weak match scored %d", low)
