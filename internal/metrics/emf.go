@@ -66,3 +66,32 @@ func EmitScan(w io.Writer, r store.Run) error {
 	}
 	return json.NewEncoder(w).Encode(line)
 }
+
+// Mail metrics. Each custom metric is billed monthly past the free tier, so
+// ingest publishes two: received and failed. Ignored mail (test messages, a
+// mailbox's forwarding confirmation) is visible in the logs instead.
+var mailNames = []string{"MailReceived", "MailFailed"}
+
+// EmitMail writes one EMF line for one stored message. status is the ingest
+// outcome; only "failed" counts as a failure.
+func EmitMail(w io.Writer, status string, at time.Time) error {
+	failed := 0.0
+	if status == "failed" {
+		failed = 1
+	}
+	defs := make([]map[string]string, 0, len(mailNames))
+	for _, n := range mailNames {
+		defs = append(defs, map[string]string{"Name": n, "Unit": "Count"})
+	}
+	return json.NewEncoder(w).Encode(map[string]any{
+		"_aws": map[string]any{
+			"Timestamp": at.UnixMilli(),
+			"CloudWatchMetrics": []map[string]any{{
+				"Namespace": Namespace, "Dimensions": [][]string{{}}, "Metrics": defs,
+			}},
+		},
+		"status":       status,
+		"MailReceived": 1.0,
+		"MailFailed":   failed,
+	})
+}

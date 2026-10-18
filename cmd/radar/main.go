@@ -4,6 +4,7 @@
 //	radar sync-boards --ats greenhouse [--from-file path]
 //	radar scan --ats greenhouse [--limit 200] [--silent] [--no-baseline]
 //	radar digest [--dry-run]
+//	radar ingest-file message.eml ...
 package main
 
 import (
@@ -32,6 +33,8 @@ commands:
   scan         check due boards of one ATS and record new postings
   digest       send the daily summary (Telegram if TELEGRAM_BOT_TOKEN and
                TELEGRAM_CHAT_ID are set, otherwise print it)
+  ingest-file  read saved .eml files the way the ingest Lambda reads stored
+               mail (keep real messages outside the repository)
 
 common flags:
   --state path   local state file (default .radar/state.json)
@@ -66,13 +69,13 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	if err := run(ctx, log, cmd, *statePath, *storeKind, *cfgPath, *atsName, *limit, *silent, *noBaseline, *fromFile, *dryRun); err != nil {
+	if err := run(ctx, log, cmd, fs.Args(), *statePath, *storeKind, *cfgPath, *atsName, *limit, *silent, *noBaseline, *fromFile, *dryRun); err != nil {
 		log.Error(cmd+" failed", "err", err)
 		os.Exit(1)
 	}
 }
 
-func run(ctx context.Context, log *slog.Logger, cmd, statePath, storeKind, cfgPath, atsName string,
+func run(ctx context.Context, log *slog.Logger, cmd string, args []string, statePath, storeKind, cfgPath, atsName string,
 	limit int, silent, noBaseline bool, fromFile string, dryRun bool) error {
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
@@ -119,6 +122,22 @@ func run(ctx context.Context, log *slog.Logger, cmd, statePath, storeKind, cfgPa
 		taipei, _ := time.LoadLocation("Asia/Taipei")
 		_, err := app.Digest(ctx, d, n, app.DigestOptions{ExpectedATS: names, DryRun: dryRun, Location: taipei})
 		return err
+	case "ingest-file":
+		if len(args) == 0 {
+			return fmt.Errorf("ingest-file needs at least one .eml path")
+		}
+		for _, path := range args {
+			f, err := os.Open(path)
+			if err != nil {
+				return err
+			}
+			o, err := app.IngestMail(ctx, d, path, f)
+			f.Close()
+			if err != nil {
+				return err
+			}
+			fmt.Printf("%s: %s (%s), sender %s\n", path, o.Status, o.Reason, o.Sender)
+		}
 	default:
 		return fmt.Errorf("unknown command %q\n%s", cmd, usage)
 	}

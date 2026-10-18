@@ -1,12 +1,17 @@
-# One Go binary, three functions with different timeouts and permissions.
+# One Go binary, one function per task with its own timeout and permissions.
 # Lambda over Fargate/EC2: the job runs minutes a day and idles otherwise. See ADR 1.
 
 locals {
-  functions = {
-    scan   = { timeout = 900, memory = 512 }
-    digest = { timeout = 60, memory = 256 }
-    sync   = { timeout = 300, memory = 256 }
-  }
+  # retries: Lambda's own retries of an asynchronous invocation.
+  functions = merge(
+    {
+      scan   = { timeout = 900, memory = 512, retries = 0 }
+      digest = { timeout = 60, memory = 256, retries = 0 }
+      sync   = { timeout = 300, memory = 256, retries = 0 }
+    },
+    # ingest exists only when mail receiving is configured (mail.tf).
+    { for d in keys(local.mail) : "ingest" => { timeout = 60, memory = 256, retries = 2 } },
+  )
   tables = {
     TABLE_BOARDS = aws_dynamodb_table.boards.name
     TABLE_JOBS   = aws_dynamodb_table.jobs.name
@@ -45,9 +50,11 @@ resource "aws_lambda_function" "fn" {
 }
 
 # Scheduler invokes asynchronously; Lambda's own async retries would re-run a
-# failed scan or send the digest twice. A failed run is reported instead.
+# failed scan or send the digest twice, so those report a failed run instead.
+# ingest is the exception: S3 invokes it, a failure there is transient (a bad
+# message is reported, not raised), and re-reading a message is harmless.
 resource "aws_lambda_function_event_invoke_config" "fn" {
   for_each               = local.functions
   function_name          = aws_lambda_function.fn[each.key].function_name
-  maximum_retry_attempts = 0
+  maximum_retry_attempts = each.value.retries
 }

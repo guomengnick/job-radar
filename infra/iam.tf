@@ -35,15 +35,21 @@ locals {
     sync = [
       { actions = ["dynamodb:Query", "dynamodb:BatchWriteItem"], resources = [aws_dynamodb_table.boards.arn] },
     ]
+    # Read stored mail only; jobs-table writes come with the 104 parser.
+    ingest = [
+      { actions = ["s3:GetObject"], resources = [for b in aws_s3_bucket.mail : "${b.arn}/inbound/*"] },
+    ]
   }
 }
 
 data "aws_iam_policy_document" "fn" {
   for_each = local.functions
 
+  # The log group ARN is spelled out rather than read from the resource, so
+  # adding a function does not defer (and re-show) every role's policy.
   statement {
     actions   = ["logs:CreateLogStream", "logs:PutLogEvents"]
-    resources = ["${aws_cloudwatch_log_group.fn[each.key].arn}:*"]
+    resources = ["arn:aws:logs:${var.region}:${data.aws_caller_identity.me.account_id}:log-group:/aws/lambda/job-radar-${each.key}:*"]
   }
 
   dynamic "statement" {

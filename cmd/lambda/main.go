@@ -1,22 +1,28 @@
-// Command lambda is the AWS Lambda entry point. One binary serves three
-// functions (scan, digest, sync-boards); EventBridge Scheduler passes the task:
+// Command lambda is the AWS Lambda entry point. One binary serves four
+// functions. EventBridge Scheduler passes the task to three of them:
 //
 //	{"task":"scan","ats":"greenhouse"}
 //	{"task":"digest"}
 //	{"task":"sync-boards","ats":"lever"}
+//
+// The fourth, ingest, is invoked by S3 when SES stores a message.
 package main
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"strings"
 	"time"
 
+	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 
 	"github.com/guomengnick/job-radar/config"
@@ -37,6 +43,7 @@ type Event struct {
 type handler struct {
 	deps app.Deps
 	ssm  *ssm.Client
+	s3   *s3.Client
 	log  *slog.Logger
 }
 
@@ -55,11 +62,19 @@ func main() {
 	st := store.NewDynamo(dynamodb.NewFromConfig(awsCfg),
 		mustEnv("TABLE_BOARDS"), mustEnv("TABLE_JOBS"), mustEnv("TABLE_RUNS"))
 	// EMF metric lines go to stdout, where CloudWatch Logs extracts them.
-	h := &handler{deps: app.NewDeps(cfg, st, log, os.Stdout), ssm: ssm.NewFromConfig(awsCfg), log: log}
+	h := &handler{deps: app.NewDeps(cfg, st, log, os.Stdout),
+		ssm: ssm.NewFromConfig(awsCfg), s3: s3.NewFromConfig(awsCfg), log: log}
 	lambda.Start(h.handle)
 }
 
-func (h *handler) handle(ctx context.Context, e Event) (string, error) {
+func (h *handler) handle(ctx context.Context, raw json.RawMessage) (string, error) {
+	if rec, ok := s3Records(raw); ok {
+		return h.ingest(ctx, rec)
+	}
+	var e Event
+	if err := json.Unmarshal(raw, &e); err != nil {
+		return "", fmt.Errorf("decode event: %w", err)
+	}
 	switch e.Task {
 	case "scan":
 		deadline, _ := ctx.Deadline()
@@ -85,6 +100,40 @@ func (h *handler) handle(ctx context.Context, e Event) (string, error) {
 		return fmt.Sprintf("%s: %d listed, %d new", e.ATS, total, added), err
 	}
 	return "", fmt.Errorf("unknown task %q", e.Task)
+}
+
+// s3Records returns the records of an S3 notification. Scheduler payloads have
+// no Records field, so they fall through to the task switch.
+func s3Records(raw json.RawMessage) ([]events.S3EventRecord, bool) {
+	var e events.S3Event
+	if json.Unmarshal(raw, &e) != nil || len(e.Records) == 0 || e.Records[0].EventSource != "aws:s3" {
+		return nil, false
+	}
+	return e.Records, true
+}
+
+// ingest reads each stored message. Errors are collected rather than stopping
+// at the first, and a retried event re-reads every object; that is safe
+// because ingest only records outcomes (and later, conditional writes).
+func (h *handler) ingest(ctx context.Context, recs []events.S3EventRecord) (string, error) {
+	var errs []error
+	counts := map[string]int{}
+	for _, r := range recs {
+		bucket, key := r.S3.Bucket.Name, r.S3.Object.URLDecodedKey
+		out, err := h.s3.GetObject(ctx, &s3.GetObjectInput{Bucket: &bucket, Key: &key})
+		if err != nil {
+			errs = append(errs, fmt.Errorf("get %s: %w", key, err))
+			continue
+		}
+		o, err := app.IngestMail(ctx, h.deps, key, out.Body)
+		out.Body.Close()
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		counts[o.Status]++
+	}
+	return fmt.Sprintf("mail: %v", counts), errors.Join(errs...)
 }
 
 // secret reads a SecureString parameter. Only the digest function's role may
