@@ -21,6 +21,15 @@ type Config struct {
 	Notify   NotifyRules   `yaml:"notify"`
 	Scan     ScanRules     `yaml:"scan"`
 	Boards   BoardRules    `yaml:"boards"`
+	// Springboard judges Taichung office jobs from 104 alerts.
+	Springboard SpringboardRules `yaml:"springboard"`
+}
+
+type SpringboardRules struct {
+	TitlePlus        []string `yaml:"title_plus"`
+	TitleExclude     []string `yaml:"title_exclude"`
+	MinAnnualSalary  int      `yaml:"min_annual_salary"`
+	MinMonthlyTopPay int      `yaml:"min_monthly_top_pay"`
 }
 
 type TitleRules struct {
@@ -101,6 +110,9 @@ func (c *Config) validate() error {
 	}
 	if c.Scan.DeadRecheckDays <= 0 {
 		c.Scan.DeadRecheckDays = 7
+	}
+	if c.Springboard.MinAnnualSalary <= 0 || c.Springboard.MinMonthlyTopPay <= 0 {
+		return fmt.Errorf("config: springboard salary floors must be set")
 	}
 	if c.Notify.MaxItems <= 0 {
 		c.Notify.MaxItems = 25

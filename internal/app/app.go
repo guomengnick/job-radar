@@ -23,9 +23,11 @@ type Deps struct {
 	Title   *filter.TitleFilter
 	Loc     *filter.LocationClassifier
 	Scorer  *filter.Scorer
-	Log     *slog.Logger
-	Metrics io.Writer // EMF lines; nil disables
-	Now     func() time.Time
+	// Springboard judges Taichung office jobs from 104 alerts.
+	Springboard *filter.Springboard
+	Log         *slog.Logger
+	Metrics     io.Writer // EMF lines; nil disables
+	Now         func() time.Time
 }
 
 // NewDeps builds the standard dependency set around a store.
@@ -48,6 +50,8 @@ func NewDeps(cfg *config.Config, st store.Store, log *slog.Logger, metrics io.Wr
 		Title:  filter.NewTitleFilter(cfg.Title.Positive, cfg.Title.Negative),
 		Loc:    filter.NewLocationClassifier(cfg.Location),
 		Scorer: filter.NewScorer(cfg.Skills),
-		Log:    log, Metrics: metrics, Now: func() time.Time { return time.Now().UTC() },
+		Springboard: filter.NewSpringboard(cfg.Springboard.TitlePlus, cfg.Springboard.TitleExclude,
+			filter.SalaryFloor{Annual: cfg.Springboard.MinAnnualSalary, MonthlyTop: cfg.Springboard.MinMonthlyTopPay}),
+		Log: log, Metrics: metrics, Now: func() time.Time { return time.Now().UTC() },
 	}
 }
