@@ -35,3 +35,9 @@ variable "timezone" {
   type    = string
   default = "Asia/Taipei"
 }
+
+variable "mail_domain" {
+  description = "Domain whose mail SES receives for job-alert ingest (for example nicholaskuo.dev). Empty turns the email resources off."
+  type        = string
+  default     = ""
+}

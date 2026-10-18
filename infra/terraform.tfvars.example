@@ -1,3 +1,6 @@
 # Copy to terraform.tfvars (git-ignored).
 alert_email      = "you@example.com"
 telegram_chat_id = "123456789"
+
+# Optional: receive forwarded job-alert mail on this domain (see infra/mail.tf).
+# mail_domain = "example.dev"

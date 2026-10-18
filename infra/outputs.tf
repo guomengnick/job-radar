@@ -9,3 +9,8 @@ output "tables" {
 output "dashboard_url" {
   value = "https://${var.region}.console.aws.amazon.com/cloudwatch/home?region=${var.region}#dashboards/dashboard/job-radar"
 }
+
+output "mail_name_servers" {
+  description = "Set these as the domain's nameservers at the registrar."
+  value       = flatten([for z in aws_route53_zone.mail : z.name_servers])
+}
