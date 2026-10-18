@@ -14,3 +14,7 @@ output "mail_name_servers" {
   description = "Set these as the domain's nameservers at the registrar."
   value       = flatten([for z in aws_route53_zone.mail : z.name_servers])
 }
+
+output "mail_bucket" {
+  value = [for b in aws_s3_bucket.mail : b.id]
+}
