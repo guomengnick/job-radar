@@ -153,3 +153,45 @@ resource "aws_ses_receipt_rule" "store" {
   # SES checks that it may write to the bucket when the rule is created.
   depends_on = [aws_s3_bucket_policy.mail]
 }
+
+# S3 calls the ingest function for every stored message. This is a resource
+# policy on the function: only S3, and only for this bucket in this account.
+resource "aws_lambda_permission" "mail_ingest" {
+  for_each       = local.mail
+  statement_id   = "AllowMailBucket"
+  action         = "lambda:InvokeFunction"
+  function_name  = aws_lambda_function.fn["ingest"].function_name
+  principal      = "s3.amazonaws.com"
+  source_arn     = aws_s3_bucket.mail[each.key].arn
+  source_account = data.aws_caller_identity.me.account_id
+}
+
+# S3 delivers notifications at least once, so ingest must tolerate repeats.
+resource "aws_s3_bucket_notification" "mail" {
+  for_each = local.mail
+  bucket   = aws_s3_bucket.mail[each.key].id
+
+  lambda_function {
+    lambda_function_arn = aws_lambda_function.fn["ingest"].arn
+    events              = ["s3:ObjectCreated:*"]
+    filter_prefix       = "inbound/"
+  }
+
+  depends_on = [aws_lambda_permission.mail_ingest]
+}
+
+# A message that cannot be read means the format or the pipeline changed.
+resource "aws_cloudwatch_metric_alarm" "mail_failed" {
+  for_each            = local.mail
+  alarm_name          = "job-radar-mail-failed"
+  alarm_description   = "A stored message could not be parsed; see the job-radar-ingest logs."
+  namespace           = "JobRadar"
+  metric_name         = "MailFailed"
+  statistic           = "Sum"
+  period              = 86400
+  evaluation_periods  = 1
+  threshold           = 0
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+}

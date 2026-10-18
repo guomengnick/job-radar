@@ -21,9 +21,10 @@ resource "aws_iam_role_policy" "scheduler" {
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
-      Effect   = "Allow"
-      Action   = "lambda:InvokeFunction"
-      Resource = [for f in aws_lambda_function.fn : f.arn]
+      Effect = "Allow"
+      Action = "lambda:InvokeFunction"
+      # Only the functions that have a schedule; ingest is invoked by S3.
+      Resource = distinct([for s in local.schedules : aws_lambda_function.fn[s.fn].arn])
     }]
   })
 }
