@@ -16,7 +16,7 @@ import (
 //
 //	boards: PK ats, SK slug
 //	jobs:   PK key; sparse GSI "pending-index" (pending, first_seen) = unsent jobs
-//	runs:   PK pk="run", SK sk="<started_at>#<ats>"; TTL on expires_at
+//	runs:   PK pk="run", SK sk="<started_at>#<ats>#<task>"; TTL on expires_at
 type Dynamo struct {
 	db                 DynamoAPI
 	boards, jobs, runs string
