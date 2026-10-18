@@ -38,9 +38,16 @@ resource "aws_dynamodb_table" "jobs" {
   # Sparse index: only unsent jobs carry "pending", so the digest reads just those.
   global_secondary_index {
     name            = "pending-index"
-    hash_key        = "pending"
-    range_key       = "first_seen"
     projection_type = "ALL"
+
+    key_schema {
+      attribute_name = "pending"
+      key_type       = "HASH"
+    }
+    key_schema {
+      attribute_name = "first_seen"
+      key_type       = "RANGE"
+    }
   }
 }
 
