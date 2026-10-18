@@ -127,6 +127,9 @@ skills:
   - { name: "Distributed systems", pattern: '(?i)distributed systems?', weight: 6 }
   - { name: "Backend/API", pattern: '(?i)\bback[- ]?end\b|\bapis?\b|microservices?', weight: 6 }
   - { name: "Industrial/IoT", pattern: '(?i)industrial|manufacturing|factory|\biot\b|iiot|robotic|semiconductor|equipment|telemetry', weight: 10 }
+  # Machine data collection, the predictive-maintenance pipeline's front end
+  # (RS485 Modbus RTU). Approved 2026-10-18; Chinese terms match 104 postings.
+  - { name: "MQTT/IoT data collection", pattern: '(?i)\bmqtt\b|modbus|data acquisition|資料收集|數據收集|資料採集|數據採集', weight: 10 }
   - { name: "Observability", pattern: '(?i)grafana|prometheus|observability|monitoring', weight: 5 }
   - { name: "Parquet/DuckDB", pattern: '(?i)parquet|duckdb', weight: 5 }
   - { name: "Docker", pattern: '(?i)\bdocker\b', weight: 4 }

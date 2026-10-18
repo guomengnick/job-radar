@@ -182,6 +182,10 @@ func TestScore(t *testing.T) {
 	if cloud != 10 || len(cm) != 3 {
 		t.Fatalf("cloud skills scored %d %v, want 10 with AWS, Terraform, Kubernetes", cloud, cm)
 	}
+	mqtt, mm := s.Score("後端工程師", "透過 MQTT 收集設備資料")
+	if mqtt != 10 || len(mm) != 1 || mm[0] != "MQTT/IoT data collection" {
+		t.Fatalf("MQTT scored %d %v, want 10 from the data-collection skill only", mqtt, mm)
+	}
 	low, _ := s.Score("Senior Backend Engineer", "Ruby on Rails and React.")
 	if low >= 20 {
 		t.Fatalf("weak match scored %d", low)
