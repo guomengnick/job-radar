@@ -15,6 +15,9 @@ import (
 	"net/mail"
 	"strings"
 	"time"
+
+	"golang.org/x/text/encoding/traditionalchinese"
+	"golang.org/x/text/transform"
 )
 
 var (
@@ -155,12 +158,16 @@ func decodeBody(body io.Reader, encoding, charset string) (string, error) {
 	return string(b), err
 }
 
-// charsetReader passes UTF-8 and ASCII through. Other charsets fail loudly
-// until a real sample shows one is needed, rather than guessing a decoder.
+// charsetReader decodes the charsets real mail has shown. Big5 came with the
+// first message forwarded from Outlook (2026-10-19): a Traditional Chinese
+// Outlook encodes headers and bodies in Big5. Anything else fails loudly
+// rather than guessing a decoder.
 func charsetReader(charset string, r io.Reader) (io.Reader, error) {
 	switch strings.ToLower(strings.Trim(charset, `" `)) {
 	case "", "utf-8", "utf8", "us-ascii", "ascii":
 		return r, nil
+	case "big5", "big-5", "cp950", "windows-950", "x-x-big5":
+		return transform.NewReader(r, traditionalchinese.Big5.NewDecoder()), nil
 	}
 	return nil, fmt.Errorf("%w: %s", ErrCharset, charset)
 }

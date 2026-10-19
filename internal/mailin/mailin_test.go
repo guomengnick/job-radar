@@ -8,6 +8,9 @@ import (
 	"mime/quotedprintable"
 	"strings"
 	"testing"
+
+	"golang.org/x/text/encoding/traditionalchinese"
+	"golang.org/x/text/transform"
 )
 
 // The fixtures are synthetic: built here with the same encodings real mail
@@ -139,8 +142,8 @@ Content-Transfer-Encoding: base64
 			wantErr: ErrNoBody,
 		},
 		{
-			name: "big5 body fails loudly instead of garbling",
-			raw: crlf("From: a@example.com\nSubject: hi\nContent-Type: text/html; charset=big5\n\n" +
+			name: "an unknown charset fails loudly instead of garbling",
+			raw: crlf("From: a@example.com\nSubject: hi\nContent-Type: text/html; charset=x-unknown\n\n" +
 				"\xab\xe1\xba\xdd"),
 			wantErr: ErrCharset,
 		},
@@ -178,3 +181,42 @@ Content-Transfer-Encoding: base64
 }
 
 var errAny = errors.New("any error")
+
+// big5 encodes s the way a Traditional Chinese Outlook does.
+func big5(t *testing.T, s string) string {
+	t.Helper()
+	b, _, err := transform.String(traditionalchinese.Big5.NewEncoder(), s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
+// TestParseBig5 mirrors the first message forwarded from Outlook: a Big5
+// B-encoded display name in From, a Big5 subject, and Big5 bodies.
+func TestParseBig5(t *testing.T) {
+	name, subj, body := "測試寄件者", "測試信", "<p>後端工程師</p>"
+	raw := crlf(`From: =?big5?B?` + b64(big5(t, name)) + `?= <Someone@Outlook.example>
+Subject: =?big5?B?` + b64(big5(t, subj)) + `?=
+Content-Type: multipart/alternative; boundary=b
+
+--b
+Content-Type: text/plain; charset="big5"
+Content-Transfer-Encoding: base64
+
+` + b64(big5(t, "後端工程師")) + `
+--b
+Content-Type: text/html; charset="big5"
+Content-Transfer-Encoding: quoted-printable
+
+` + qp(big5(t, body)) + `
+--b--
+`)
+	m, err := Parse(strings.NewReader(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.From != "someone@outlook.example" || m.Subject != subj || m.HTML != body || m.Text != "後端工程師" {
+		t.Errorf("got %+v", m)
+	}
+}
