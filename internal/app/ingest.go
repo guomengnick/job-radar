@@ -21,8 +21,12 @@ import (
 // SES accepts messages up to 40 MB; a job alert is a few hundred KB.
 const maxMailBytes = 20 << 20
 
-// alertATS is the ATS field of jobs that came from 104 alerts.
-const alertATS = "104"
+// The ATS field of records from 104 mail: jobs from alerts, and contacts
+// (a recruiter's message, an application read), which the digest lists first.
+const (
+	alertATS   = "104"
+	contactATS = "104-contact"
+)
 
 // jobAlertSenders are the domains whose mail becomes jobs (subdomains count).
 // Anything else, such as a test message or a mailbox's forwarding
@@ -39,13 +43,13 @@ type MailOutcome struct {
 	Key    string // the object key in the mail bucket
 	Sender string // the sender's domain only: logs keep no addresses
 	Status string // "parsed" | "ignored" | "failed"
-	Reason string
+	Reason string // for a parsed message: "alert" or the contact's kind
 	// For a parsed alert: jobs listed, first seen, and new ones to send.
 	Jobs, New, Pending int
 }
 
-// IngestMail reads one message that SES stored and turns a verified 104 match
-// alert into job records. A message that cannot be parsed is reported in the
+// IngestMail reads one message that SES stored and turns verified 104 mail
+// into records: a match alert into its jobs, a contact into one entry. A message that cannot be parsed is reported in the
 // outcome, not returned as an error: a retry would fail the same way, and the
 // raw copy stays in the bucket for a later re-run. Read and store errors are
 // returned, so the Lambda's asynchronous retry covers transient failures; the
@@ -59,19 +63,30 @@ func IngestMail(ctx context.Context, d Deps, key string, raw io.Reader) (MailOut
 	var m *mailin.Message
 	m, o.Sender, o.Status, o.Reason = classifyMail(b)
 	var storeErr error
-	if o.Status == "alert" {
-		o.Status, o.Reason = "parsed", "ok"
+	switch {
+	case o.Status != "verified":
+	case alert104.IsMatchAlert(m.Subject):
+		o.Status, o.Reason = "parsed", "alert"
 		jobs, err := alert104.Parse(m.HTML)
 		if err != nil {
 			o.Status, o.Reason = "failed", err.Error()
-		} else {
-			run, err := d.saveAlertJobs(ctx, m, jobs)
-			o.Jobs, o.New, o.Pending = run.JobsFetched, run.JobsNew, run.JobsPending
-			if err != nil {
-				o.Status, o.Reason = "failed", "store_error"
-				storeErr = fmt.Errorf("store %s: %w", key, err)
-			}
+			break
 		}
+		run, err := d.saveAlertJobs(ctx, m, jobs)
+		o.Jobs, o.New, o.Pending = run.JobsFetched, run.JobsNew, run.JobsPending
+		storeErr = err
+	default:
+		c, ok := alert104.ParseContact(m.Subject, m.HTML)
+		if !ok {
+			o.Status, o.Reason = "ignored", "other_104_mail" // login codes, newsletters
+			break
+		}
+		o.Status, o.Reason = "parsed", c.Kind
+		storeErr = d.saveContact(ctx, m, c)
+	}
+	if storeErr != nil {
+		o.Status, o.Reason = "failed", "store_error"
+		storeErr = fmt.Errorf("store %s: %w", key, storeErr)
 	}
 	if d.Metrics != nil {
 		metrics.EmitMail(d.Metrics, o.Status, d.Now())
@@ -81,8 +96,8 @@ func IngestMail(ctx context.Context, d Deps, key string, raw io.Reader) (MailOut
 	return o, storeErr
 }
 
-// classifyMail returns status "alert" for a verified 104 match alert, which
-// the caller then parses.
+// classifyMail returns status "verified" for mail from 104 that passed the
+// sender check, which the caller then reads.
 func classifyMail(b []byte) (m *mailin.Message, sender, status, reason string) {
 	if len(b) > maxMailBytes {
 		return nil, "", "failed", "too_large"
@@ -97,11 +112,8 @@ func classifyMail(b []byte) (m *mailin.Message, sender, status, reason string) {
 		return m, sender, "ignored", "not_a_job_alert_sender"
 	case !verified(m):
 		return m, sender, "ignored", "unverified_sender"
-	case !alert104.IsMatchAlert(m.Subject):
-		// Application notices, recruiters' messages, login codes.
-		return m, sender, "ignored", "not_a_match_alert"
 	}
-	return m, sender, "alert", ""
+	return m, sender, "verified", ""
 }
 
 func isJobAlertSender(domain string) bool {
@@ -234,6 +246,29 @@ func (d Deps) alertJob(j alert104.Job, posted, now time.Time) store.JobRecord {
 		Score: min(score+10*len(v.Hits), 100), Skills: skills, Salary: j.Salary,
 		Notes: notes(d.Cfg.Springboard.Notes, j), PostedAt: posted, FirstSeen: now, State: state,
 	}
+}
+
+// saveContact records one contact, keyed by kind, company and job: a retried
+// event, or a recruiter sending the same message twice (it happens, seconds
+// apart), lists it once. Its job title goes through the same
+// title rules, so a recruiter's 業務 role says so at a glance; an
+// application the user sent is not judged.
+func (d Deps) saveContact(ctx context.Context, m *mailin.Message, c alert104.Contact) error {
+	rec := store.JobRecord{
+		Key: strings.Join([]string{contactATS, c.Kind, c.Company, c.JobCode}, "#"), ATS: contactATS, Board: c.Company, Title: c.JobTitle, URL: c.URL(),
+		Reason: c.Kind, PostedAt: m.Date, FirstSeen: d.Now(), State: store.JobNew,
+	}
+	if c.JobTitle != "" && c.Kind != "應徵已讀" {
+		rec.Score, rec.Skills = d.Scorer.Score(c.JobTitle, "")
+		if v := d.Springboard.Evaluate(c.JobTitle, ""); !v.Pass {
+			rec.Notes = append(rec.Notes, "職稱含「"+strings.TrimPrefix(v.Reason, "title_excluded:")+"」")
+		}
+	}
+	if c.ReplyBy != "" {
+		rec.Notes = append(rec.Notes, c.ReplyBy)
+	}
+	_, err := d.Store.InsertJobIfNew(ctx, rec)
+	return err
 }
 
 // placeAlertJob classes a 104 job by where it was listed. The saved searches
