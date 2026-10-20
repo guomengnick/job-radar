@@ -41,6 +41,10 @@ type Message struct {
 	MessageID string
 	HTML      string // the first inline text/html part
 	Text      string // the first inline text/plain part
+	// AuthResults holds the Authentication-Results headers in message order.
+	// Each receiving server adds its own above the others, so the first one
+	// from a given server is the one that server wrote.
+	AuthResults []string
 }
 
 // FromDomain returns the part of From after the last "@".
@@ -55,7 +59,10 @@ func Parse(r io.Reader) (*Message, error) {
 		return nil, fmt.Errorf("read message: %w", err)
 	}
 	dec := &mime.WordDecoder{CharsetReader: charsetReader}
-	m := &Message{MessageID: strings.Trim(msg.Header.Get("Message-Id"), "<> ")}
+	m := &Message{
+		MessageID:   strings.Trim(msg.Header.Get("Message-Id"), "<> "),
+		AuthResults: msg.Header["Authentication-Results"],
+	}
 
 	if raw := msg.Header.Get("From"); raw != "" {
 		addr, err := (&mail.AddressParser{WordDecoder: dec}).Parse(raw)

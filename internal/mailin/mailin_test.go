@@ -220,3 +220,25 @@ Content-Transfer-Encoding: quoted-printable
 		t.Errorf("got %+v", m)
 	}
 }
+
+func TestParseAuthResults(t *testing.T) {
+	raw := crlf(`Authentication-Results: amazonses.com;
+ spf=pass client-ip=192.0.2.1; dkim=pass header.i=@outlook.example
+From: a@example.com
+Authentication-Results: mx.example.net 1; dmarc=pass header.from=example.com
+Subject: hi
+
+body
+`)
+	m, err := Parse(strings.NewReader(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"amazonses.com; spf=pass client-ip=192.0.2.1; dkim=pass header.i=@outlook.example",
+		"mx.example.net 1; dmarc=pass header.from=example.com",
+	}
+	if len(m.AuthResults) != 2 || m.AuthResults[0] != want[0] || m.AuthResults[1] != want[1] {
+		t.Errorf("AuthResults = %q", m.AuthResults)
+	}
+}
