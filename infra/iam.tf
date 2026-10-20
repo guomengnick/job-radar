@@ -35,9 +35,11 @@ locals {
     sync = [
       { actions = ["dynamodb:Query", "dynamodb:BatchWriteItem"], resources = [aws_dynamodb_table.boards.arn] },
     ]
-    # Read stored mail only; jobs-table writes come with the 104 parser.
+    # Read stored mail; insert 104 alert jobs (conditional puts) and the run
+    # record. No reads, updates or deletes on either table.
     ingest = [
       { actions = ["s3:GetObject"], resources = [for b in aws_s3_bucket.mail : "${b.arn}/inbound/*"] },
+      { actions = ["dynamodb:PutItem"], resources = [aws_dynamodb_table.jobs.arn, aws_dynamodb_table.runs.arn] },
     ]
   }
 }
