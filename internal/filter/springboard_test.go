@@ -72,6 +72,9 @@ func TestSpringboard(t *testing.T) {
 		{"軟體工程師（實習）", "時薪 200元", false, "title_excluded:實習", nil},
 		{"業務工程師", "待遇面議", false, "title_excluded:業務", nil},
 		{"韌體工程師 Firmware", "待遇面議", false, "title_excluded:韌體", nil},
+		{"資深行銷", "待遇面議", false, "title_excluded:行銷", nil},
+		{"行政類--人資流程優化管理師", "待遇面議", false, "title_excluded:行政", nil},
+		{"2026校園徵才-軟體類_大數據工程師", "待遇面議", false, "title_excluded:校園徵才", nil},
 		{"Python 資料工程師", "月薪 40,000~60,000元", false, "salary_below_floor", []string{"資料工程", "python"}},
 	}
 	for _, tt := range tests {
