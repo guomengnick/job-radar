@@ -159,6 +159,13 @@ springboard:
   # 面議 only implies NT$40k a month or more, so it is listed as unknown.
   min_annual_salary: 1000000
   min_monthly_top_pay: 70000
+  # Tagged, not dropped: the user judges these by hand (2026-10-19). 104
+  # cuts descriptions to about 150 characters, so a tag can be missed.
+  notes:
+    - { name: 替代役, words: [替代役] }
+    - { name: 兼職, words: [兼職, 部分工時] }
+    - { name: 外包／派遣, words: [外包, 派遣, 駐點, 駐廠] }
+    - { name: 顧問, words: [顧問] }
 
 notify:
   # Class A = explicitly open to Taiwan; class B = remote, country not stated.

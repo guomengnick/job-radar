@@ -49,6 +49,8 @@ type JobRecord struct {
 	Reason     string    `json:"reason" dynamodbav:"reason"`
 	Score      int       `json:"score" dynamodbav:"score"`
 	Skills     []string  `json:"skills,omitempty" dynamodbav:"skills,omitempty"`
+	Salary     string    `json:"salary,omitempty" dynamodbav:"salary,omitempty"` // as posted; 104 only
+	Notes      []string  `json:"notes,omitempty" dynamodbav:"notes,omitempty"`   // e.g. 兼職; 104 only
 	PostedAt   time.Time `json:"posted_at" dynamodbav:"posted_at"`
 	FirstSeen  time.Time `json:"first_seen" dynamodbav:"first_seen"`
 	State      JobState  `json:"state" dynamodbav:"state"`
