@@ -43,19 +43,12 @@ func Digest(ctx context.Context, d Deps, n notify.Notifier, o DigestOptions) (st
 		}
 		return pending[i].Score > pending[j].Score
 	})
-	// Job-board roles are capped at MaxItems; every 104 alert job is listed
-	// (the user's choice), and they do not count toward the cap, so a busy
-	// alert day cannot crowd out the remote roles. Telegram gets the long
-	// message in parts.
-	var boardJobs, alertJobs []store.JobRecord
-	for _, j := range pending {
-		if j.ATS == alertATS {
-			alertJobs = append(alertJobs, j)
-		} else {
-			boardJobs = append(boardJobs, j)
-		}
-	}
-	shown := append(boardJobs[:min(len(boardJobs), d.Cfg.Notify.MaxItems)], alertJobs...)
+	// Job-board roles are capped at MaxItems; every 104 alert job and contact
+	// is listed (the user's choice), and they do not count toward the cap, so
+	// a busy alert day cannot crowd out the remote roles. Telegram gets the
+	// long message in parts.
+	boardJobs, alertJobs, contacts := splitBySource(pending)
+	shown := append(append(boardJobs[:min(len(boardJobs), d.Cfg.Notify.MaxItems)], alertJobs...), contacts...)
 
 	msg := BuildDigest(now.In(o.Location), runs, shown, len(pending)-len(shown), o.ExpectedATS)
 	if err := n.Send(ctx, msg); err != nil {
@@ -73,8 +66,11 @@ func Digest(ctx context.Context, d Deps, n notify.Notifier, o DigestOptions) (st
 
 // BuildDigest renders the Telegram message (HTML parse mode).
 func BuildDigest(now time.Time, runs []store.Run, jobs []store.JobRecord, more int, expected []string) string {
+	boardJobs, alertJobs, contacts := splitBySource(jobs)
 	var b strings.Builder
-	fmt.Fprintf(&b, "<b>📡 職缺雷達 %s</b>\n\n<b>掃描狀況</b>\n", now.Format("01/02 15:04"))
+	fmt.Fprintf(&b, "<b>📡 職缺雷達 %s</b>\n\n", now.Format("01/02 15:04"))
+	writeContacts(&b, contacts)
+	b.WriteString("<b>掃描狀況</b>\n")
 
 	latest := map[string]store.Run{}
 	for _, r := range runs {
@@ -125,14 +121,6 @@ func BuildDigest(now time.Time, runs []store.Run, jobs []store.JobRecord, more i
 	}
 	writeMailLine(&b, runs)
 
-	var boardJobs, alertJobs []store.JobRecord
-	for _, j := range jobs {
-		if j.ATS == alertATS {
-			alertJobs = append(alertJobs, j)
-		} else {
-			boardJobs = append(boardJobs, j)
-		}
-	}
 	fmt.Fprintf(&b, "\n<b>值得看的新職缺：%d 筆</b>\n", len(boardJobs))
 	if len(boardJobs) == 0 {
 		b.WriteString("今天沒有。\n")
@@ -169,6 +157,54 @@ func BuildDigest(now time.Time, runs []store.Run, jobs []store.JobRecord, more i
 	}
 	b.WriteString("最後投不投，請貼網址做完整評分。")
 	return b.String()
+}
+
+// splitBySource separates job-board roles, 104 alert jobs and 104 contacts,
+// keeping each group's order.
+func splitBySource(jobs []store.JobRecord) (board, alert, contacts []store.JobRecord) {
+	for _, j := range jobs {
+		switch j.ATS {
+		case alertATS:
+			alert = append(alert, j)
+		case contactATS:
+			contacts = append(contacts, j)
+		default:
+			board = append(board, j)
+		}
+	}
+	return board, alert, contacts
+}
+
+// contactOrder puts what needs a reply first.
+var contactOrder = map[string]int{"面試邀約": 0, "詢問意願": 1, "求才通知": 2, "應徵已讀": 3}
+
+// writeContacts opens the digest with the people who reached out, since an
+// invitation may ask for a reply within a day.
+func writeContacts(b *strings.Builder, contacts []store.JobRecord) {
+	if len(contacts) == 0 {
+		return
+	}
+	rank := func(kind string) int {
+		if r, ok := contactOrder[kind]; ok {
+			return r
+		}
+		return len(contactOrder)
+	}
+	sort.SliceStable(contacts, func(i, j int) bool { return rank(contacts[i].Reason) < rank(contacts[j].Reason) })
+	fmt.Fprintf(b, "<b>👋 有人來找你：%d 則</b>\n", len(contacts))
+	for _, c := range contacts {
+		fmt.Fprintf(b, "\n%s｜%s\n", html.EscapeString(c.Reason), html.EscapeString(c.Board))
+		switch {
+		case c.URL != "":
+			fmt.Fprintf(b, "<a href=\"%s\">%s</a>\n", html.EscapeString(c.URL), html.EscapeString(c.Title))
+		case c.Title != "":
+			fmt.Fprintf(b, "%s\n", html.EscapeString(c.Title))
+		}
+		if len(c.Notes) > 0 {
+			fmt.Fprintf(b, "注意：%s\n", html.EscapeString(strings.Join(c.Notes, "｜")))
+		}
+	}
+	b.WriteString("\n")
 }
 
 // writeMailLine sums the 104 alerts received in the window. 104 sends the
