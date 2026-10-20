@@ -42,7 +42,7 @@ func TestDigestShowsAlertJobs(t *testing.T) {
 	}
 }
 
-func TestDigestCapsAlertJobsSeparately(t *testing.T) {
+func TestDigestListsEveryAlertJob(t *testing.T) {
 	ctx := context.Background()
 	d, _, st, _ := setup(t)
 	d.Cfg.Notify.MaxItems = 1
@@ -52,10 +52,10 @@ func TestDigestCapsAlertJobsSeparately(t *testing.T) {
 	}
 	var out bytes.Buffer
 	msg, err := Digest(ctx, d, notify.Writer{W: &out}, DigestOptions{})
-	if err != nil || !strings.Contains(msg, "<b>104 配對信：1 筆</b>") || !strings.Contains(msg, "另有 1 筆留到下次") {
+	if err != nil || !strings.Contains(msg, "<b>104 配對信：2 筆</b>") || strings.Contains(msg, "留到下次") {
 		t.Fatalf("%v\n%s", err, msg)
 	}
-	if p, _ := st.PendingJobs(ctx); len(p) != 1 {
-		t.Errorf("the job over the cap stays pending: %d", len(p))
+	if p, _ := st.PendingJobs(ctx); len(p) != 0 {
+		t.Errorf("no 104 job waits for the next digest: %d pending", len(p))
 	}
 }
