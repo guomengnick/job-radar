@@ -43,9 +43,19 @@ func Digest(ctx context.Context, d Deps, n notify.Notifier, o DigestOptions) (st
 		}
 		return pending[i].Score > pending[j].Score
 	})
-	shown := pending
-	if len(shown) > d.Cfg.Notify.MaxItems {
-		shown = shown[:d.Cfg.Notify.MaxItems]
+	// Job boards and 104 alerts each get up to MaxItems, so a busy alert day
+	// cannot crowd out the remote roles.
+	var boardJobs, alertJobs []store.JobRecord
+	for _, j := range pending {
+		if j.ATS == alertATS {
+			alertJobs = append(alertJobs, j)
+		} else {
+			boardJobs = append(boardJobs, j)
+		}
+	}
+	var shown []store.JobRecord
+	for _, group := range [][]store.JobRecord{boardJobs, alertJobs} {
+		shown = append(shown, group[:min(len(group), d.Cfg.Notify.MaxItems)]...)
 	}
 
 	msg := BuildDigest(now.In(o.Location), runs, shown, len(pending)-len(shown), o.ExpectedATS)
@@ -114,12 +124,21 @@ func BuildDigest(now time.Time, runs []store.Run, jobs []store.JobRecord, more i
 		fmt.Fprintf(&b, "新出現（含未達門檻）：A %d｜B %d｜C %d｜D %d\n",
 			newByClass["A"], newByClass["B"], newByClass["C"], newByClass["D"])
 	}
+	writeMailLine(&b, runs)
 
-	fmt.Fprintf(&b, "\n<b>值得看的新職缺：%d 筆</b>\n", len(jobs)+more)
-	if len(jobs) == 0 {
+	var boardJobs, alertJobs []store.JobRecord
+	for _, j := range jobs {
+		if j.ATS == alertATS {
+			alertJobs = append(alertJobs, j)
+		} else {
+			boardJobs = append(boardJobs, j)
+		}
+	}
+	fmt.Fprintf(&b, "\n<b>值得看的新職缺：%d 筆</b>\n", len(boardJobs))
+	if len(boardJobs) == 0 {
 		b.WriteString("今天沒有。\n")
 	}
-	for _, j := range jobs {
+	for _, j := range boardJobs {
 		fmt.Fprintf(&b, "\n[%s %d] <a href=\"%s\">%s</a>\n%s｜%s\n",
 			j.Class, j.Score, html.EscapeString(j.URL), html.EscapeString(j.Title),
 			html.EscapeString(j.Board), html.EscapeString(truncate(j.Location, 80)))
@@ -128,11 +147,57 @@ func BuildDigest(now time.Time, runs []store.Run, jobs []store.JobRecord, more i
 		}
 		fmt.Fprintf(&b, "判斷：%s\n", reasonText(j.Reason))
 	}
+	if len(alertJobs) > 0 {
+		fmt.Fprintf(&b, "\n<b>104 配對信：%d 筆</b>\n", len(alertJobs))
+	}
+	for _, j := range alertJobs {
+		fmt.Fprintf(&b, "\n[%s %d] <a href=\"%s\">%s</a>\n%s｜%s｜%s\n",
+			j.Class, j.Score, html.EscapeString(j.URL), html.EscapeString(j.Title),
+			html.EscapeString(j.Board), html.EscapeString(j.Location), html.EscapeString(j.Salary))
+		if len(j.Skills) > 0 {
+			fmt.Fprintf(&b, "技能：%s\n", html.EscapeString(strings.Join(j.Skills, "、")))
+		}
+		if len(j.Notes) > 0 {
+			fmt.Fprintf(&b, "注意：%s\n", html.EscapeString(strings.Join(j.Notes, "、")))
+		}
+	}
 	if more > 0 {
 		fmt.Fprintf(&b, "\n另有 %d 筆留到下次。\n", more)
 	}
-	b.WriteString("\nA＝明確可從台灣應徵；B＝待確認。最後投不投，請貼網址做完整評分。")
+	b.WriteString("\nA＝明確可從台灣應徵；B＝待確認。")
+	if len(alertJobs) > 0 {
+		b.WriteString("104 的 A＝遠端，B＝台中到班。")
+	}
+	b.WriteString("最後投不投，請貼網址做完整評分。")
 	return b.String()
+}
+
+// writeMailLine sums the 104 alerts received in the window. 104 sends the
+// daily alert Tuesday to Saturday and the weekly one on Sunday, so a Monday
+// without mail is normal.
+func writeMailLine(b *strings.Builder, runs []store.Run) {
+	var mails, listed, fresh, pending int
+	var errs []string
+	for _, r := range runs {
+		if r.Task != "mail" {
+			continue
+		}
+		mails++
+		listed += r.JobsFetched
+		fresh += r.JobsNew
+		pending += r.JobsPending
+		if r.Error != "" {
+			errs = append(errs, r.Error)
+		}
+	}
+	if mails == 0 {
+		b.WriteString("📭 104 配對信：這段時間沒有收到\n")
+		return
+	}
+	fmt.Fprintf(b, "📬 104 配對信 %d 封｜職缺 %d｜第一次出現 %d｜值得看 %d\n", mails, listed, fresh, pending)
+	for _, e := range errs {
+		fmt.Fprintf(b, "   寫入錯誤：%s\n", html.EscapeString(truncate(e, 200)))
+	}
 }
 
 var reasons = map[string]string{
