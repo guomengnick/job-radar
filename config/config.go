@@ -30,6 +30,14 @@ type SpringboardRules struct {
 	TitleExclude     []string `yaml:"title_exclude"`
 	MinAnnualSalary  int      `yaml:"min_annual_salary"`
 	MinMonthlyTopPay int      `yaml:"min_monthly_top_pay"`
+	// Notes tag a job in the digest; they never drop one.
+	Notes []NoteRule `yaml:"notes"`
+}
+
+// NoteRule tags a job whose title, description or tags contain any of Words.
+type NoteRule struct {
+	Name  string   `yaml:"name"`
+	Words []string `yaml:"words"`
 }
 
 type TitleRules struct {

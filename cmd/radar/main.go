@@ -136,7 +136,8 @@ func run(ctx context.Context, log *slog.Logger, cmd string, args []string, state
 			if err != nil {
 				return err
 			}
-			fmt.Printf("%s: %s (%s), sender %s\n", path, o.Status, o.Reason, o.Sender)
+			fmt.Printf("%s: %s (%s), sender %s, jobs %d, new %d, to send %d\n",
+				path, o.Status, o.Reason, o.Sender, o.Jobs, o.New, o.Pending)
 		}
 	default:
 		return fmt.Errorf("unknown command %q\n%s", cmd, usage)
