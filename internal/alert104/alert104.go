@@ -1,6 +1,8 @@
-// Package alert104 reads the job lists in 104's 配對信, the daily and weekly
-// mail with the new jobs for each saved search. It knows the mail's HTML
-// layout only; what a job is worth is decided by the filter package.
+// Package alert104 reads 104's mail: the job lists in the 配對信 (the daily
+// and weekly mail with the new jobs for each saved search), and the mail
+// about the user, such as a recruiter's interview invitation (contact.go).
+// It knows the layouts only; what a job is worth is decided by the filter
+// package.
 package alert104
 
 import (
