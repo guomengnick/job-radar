@@ -43,8 +43,10 @@ func Digest(ctx context.Context, d Deps, n notify.Notifier, o DigestOptions) (st
 		}
 		return pending[i].Score > pending[j].Score
 	})
-	// Job boards and 104 alerts each get up to MaxItems, so a busy alert day
-	// cannot crowd out the remote roles.
+	// Job-board roles are capped at MaxItems; every 104 alert job is listed
+	// (the user's choice), and they do not count toward the cap, so a busy
+	// alert day cannot crowd out the remote roles. Telegram gets the long
+	// message in parts.
 	var boardJobs, alertJobs []store.JobRecord
 	for _, j := range pending {
 		if j.ATS == alertATS {
@@ -53,10 +55,7 @@ func Digest(ctx context.Context, d Deps, n notify.Notifier, o DigestOptions) (st
 			boardJobs = append(boardJobs, j)
 		}
 	}
-	var shown []store.JobRecord
-	for _, group := range [][]store.JobRecord{boardJobs, alertJobs} {
-		shown = append(shown, group[:min(len(group), d.Cfg.Notify.MaxItems)]...)
-	}
+	shown := append(boardJobs[:min(len(boardJobs), d.Cfg.Notify.MaxItems)], alertJobs...)
 
 	msg := BuildDigest(now.In(o.Location), runs, shown, len(pending)-len(shown), o.ExpectedATS)
 	if err := n.Send(ctx, msg); err != nil {
