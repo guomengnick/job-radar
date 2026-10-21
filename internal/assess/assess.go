@@ -1,7 +1,8 @@
 // Package assess asks Claude to judge one job posting against the user's
-// profile. The page text is passed as data, and the model must answer through
-// a single tool whose input has a fixed shape, so the reply is always the same
-// JSON and nothing a posting says can make the model act.
+// profile. The page text is passed as data, and the model answers through a
+// single tool whose input has a fixed shape, so the reply is always the same
+// JSON and nothing a posting says can make the model act: the tool only
+// records, and a reply without it is an error.
 package assess
 
 import (
@@ -143,16 +144,19 @@ func (c Client) request(profile string, p Page) map[string]any {
 		"<page>\n<url>" + p.URL + "</url>\n<title>" + p.Title + "</title>\n<text>\n" +
 		string(text) + cut + "\n</text>\n</page>"
 	return map[string]any{
-		"model":       c.Model,
-		"max_tokens":  2000,
-		"temperature": 0,
+		// No temperature: newer models reject it. Steady scores come from
+		// the rubric and the fixed schema instead.
+		"model":      c.Model,
+		"max_tokens": 2000,
 		"system": []map[string]any{
 			{"type": "text", "text": instructions},
 			{"type": "text", "text": "<profile>\n" + profile + "\n</profile>",
 				"cache_control": map[string]string{"type": "ephemeral"}},
 		},
+		// Newer models refuse a forced tool_choice ("tool" or "any"), so the
+		// prompt asks for the call; a reply without it is ErrNoAssessment.
 		"tools":       []any{tool},
-		"tool_choice": map[string]string{"type": "tool", "name": toolName},
+		"tool_choice": map[string]string{"type": "auto"},
 		"messages":    []map[string]any{{"role": "user", "content": user}},
 	}
 }

@@ -2,7 +2,7 @@ package assess
 
 // The rubric. The user's own facts and preferences live in the profile,
 // which is private (an SSM parameter), so this file holds no personal data.
-const instructions = `你是使用者的求職助理。依 <profile> 裡的背景與偏好，評估使用者送來的一份職缺，用 record_assessment 工具回報。所有文字用繁體中文。
+const instructions = `你是使用者的求職助理。依 <profile> 裡的背景與偏好，評估使用者送來的一份職缺。你的回覆必須是呼叫一次 record_assessment 工具，不要輸出其他文字。所有欄位用繁體中文。
 
 評分（score，0–100）：
 - 80 以上：<profile> 的跳板條件幾乎都符合，技能高度契合，沒有嚴重紅旗。
