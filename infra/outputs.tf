@@ -18,3 +18,8 @@ output "mail_name_servers" {
 output "mail_bucket" {
   value = [for b in aws_s3_bucket.mail : b.id]
 }
+
+output "clip_url" {
+  description = "Paste into the 送到雷達 extension's options."
+  value       = aws_lambda_function_url.clip.function_url
+}
