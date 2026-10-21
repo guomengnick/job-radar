@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "送到雷達",
+  "version": "1.0.0",
+  "description": "把目前開著的職缺頁送到 job-radar 評分，結果由 Telegram 回覆。",
+  "action": { "default_title": "送到雷達" },
+  "background": { "service_worker": "background.js" },
+  "options_page": "options.html",
+  "permissions": ["activeTab", "scripting", "storage"],
+  "host_permissions": ["https://*.lambda-url.ap-southeast-2.on.aws/*"]
+}

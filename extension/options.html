@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>送到雷達：設定</title>
+  <style>
+    body { font: 14px system-ui, sans-serif; margin: 24px; max-width: 520px; }
+    label { display: block; margin: 16px 0 4px; font-weight: 600; }
+    input { width: 100%; padding: 6px; box-sizing: border-box; }
+    button { margin-top: 16px; padding: 6px 16px; }
+    #status { margin-left: 8px; color: #2e7d32; }
+    p { color: #555; }
+  </style>
+</head>
+<body>
+  <h1>送到雷達</h1>
+  <p>兩個值都只存在這台電腦的 Chrome 裡。取得方式見 extension/README.md。</p>
+  <label for="endpoint">接收網址（terraform output clip_url）</label>
+  <input id="endpoint" type="url" placeholder="https://….lambda-url.ap-southeast-2.on.aws/">
+  <label for="secret">密鑰（SSM /job-radar/clip-secret）</label>
+  <input id="secret" type="password" autocomplete="off">
+  <button id="save">儲存</button><span id="status"></span>
+  <script src="options.js"></script>
+</body>
+</html>
