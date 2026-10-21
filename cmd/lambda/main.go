@@ -1,19 +1,23 @@
-// Command lambda is the AWS Lambda entry point. One binary serves four
+// Command lambda is the AWS Lambda entry point. One binary serves five
 // functions. EventBridge Scheduler passes the task to three of them:
 //
 //	{"task":"scan","ats":"greenhouse"}
 //	{"task":"digest"}
 //	{"task":"sync-boards","ats":"lever"}
 //
-// The fourth, ingest, is invoked by S3 when SES stores a message.
+// ingest is invoked by S3 when SES stores a message, and clip through its
+// function URL when the 送到雷達 browser extension sends a page.
 package main
 
 import (
 	"context"
+	"crypto/subtle"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -27,6 +31,7 @@ import (
 
 	"github.com/guomengnick/job-radar/config"
 	"github.com/guomengnick/job-radar/internal/app"
+	"github.com/guomengnick/job-radar/internal/assess"
 	"github.com/guomengnick/job-radar/internal/notify"
 	"github.com/guomengnick/job-radar/internal/store"
 )
@@ -42,9 +47,11 @@ type Event struct {
 
 type handler struct {
 	deps app.Deps
-	ssm  *ssm.Client
 	s3   *s3.Client
 	log  *slog.Logger
+	// secret reads a SecureString parameter. Each role may read only its own
+	// parameters, so a bug in the scanner cannot leak the bot token.
+	secret func(ctx context.Context, name string) (string, error)
 }
 
 func main() {
@@ -62,12 +69,24 @@ func main() {
 	st := store.NewDynamo(dynamodb.NewFromConfig(awsCfg),
 		mustEnv("TABLE_BOARDS"), mustEnv("TABLE_JOBS"), mustEnv("TABLE_RUNS"))
 	// EMF metric lines go to stdout, where CloudWatch Logs extracts them.
-	h := &handler{deps: app.NewDeps(cfg, st, log, os.Stdout),
-		ssm: ssm.NewFromConfig(awsCfg), s3: s3.NewFromConfig(awsCfg), log: log}
+	params := ssm.NewFromConfig(awsCfg)
+	h := &handler{deps: app.NewDeps(cfg, st, log, os.Stdout), s3: s3.NewFromConfig(awsCfg), log: log,
+		secret: func(ctx context.Context, name string) (string, error) {
+			out, err := params.GetParameter(ctx, &ssm.GetParameterInput{Name: &name, WithDecryption: ptr(true)})
+			if err != nil {
+				return "", fmt.Errorf("read parameter %s: %w", name, err)
+			}
+			return *out.Parameter.Value, nil
+		}}
 	lambda.Start(h.handle)
 }
 
-func (h *handler) handle(ctx context.Context, raw json.RawMessage) (string, error) {
+// handle returns a string for scheduled and S3 invocations, and an HTTP
+// response for the function URL.
+func (h *handler) handle(ctx context.Context, raw json.RawMessage) (any, error) {
+	if req, ok := urlRequest(raw); ok {
+		return h.clip(ctx, req), nil
+	}
 	if rec, ok := s3Records(raw); ok {
 		return h.ingest(ctx, rec)
 	}
@@ -136,14 +155,87 @@ func (h *handler) ingest(ctx context.Context, recs []events.S3EventRecord) (stri
 	return fmt.Sprintf("mail: %v", counts), errors.Join(errs...)
 }
 
-// secret reads a SecureString parameter. Only the digest function's role may
-// read it, so a bug in the scanner cannot leak the bot token.
-func (h *handler) secret(ctx context.Context, name string) (string, error) {
-	out, err := h.ssm.GetParameter(ctx, &ssm.GetParameterInput{Name: &name, WithDecryption: ptr(true)})
-	if err != nil {
-		return "", fmt.Errorf("read parameter %s: %w", name, err)
+// urlRequest returns the request when the function was invoked through its
+// function URL; scheduler and S3 payloads have no requestContext.http.
+func urlRequest(raw json.RawMessage) (events.LambdaFunctionURLRequest, bool) {
+	var r events.LambdaFunctionURLRequest
+	if json.Unmarshal(raw, &r) != nil || r.RequestContext.HTTP.Method == "" {
+		return r, false
 	}
-	return *out.Parameter.Value, nil
+	return r, true
+}
+
+// A page's text is tens of KB at most.
+const maxClipBytes = 256 << 10
+
+// clip serves POST from the browser extension. The function URL is public,
+// so the shared secret in the x-radar-secret header is the gate: nothing is
+// read or called before it matches. Errors are logged in full and answered
+// with a status only.
+func (h *handler) clip(ctx context.Context, r events.LambdaFunctionURLRequest) events.LambdaFunctionURLResponse {
+	if r.RequestContext.HTTP.Method != http.MethodPost {
+		return reply(http.StatusMethodNotAllowed, "method not allowed")
+	}
+	want, err := h.secret(ctx, mustEnv("CLIP_SECRET_PARAM"))
+	if err != nil {
+		h.log.Error("clip secret", "err", err)
+		return reply(http.StatusInternalServerError, "server error")
+	}
+	if got := header(r.Headers, "x-radar-secret"); want == "" || subtle.ConstantTimeCompare([]byte(got), []byte(want)) != 1 {
+		h.log.Warn("clip refused", "source_ip", r.RequestContext.HTTP.SourceIP)
+		return reply(http.StatusUnauthorized, "unauthorized")
+	}
+	body := []byte(r.Body)
+	if r.IsBase64Encoded {
+		if body, err = base64.StdEncoding.DecodeString(r.Body); err != nil {
+			return reply(http.StatusBadRequest, "bad body")
+		}
+	}
+	if len(body) > maxClipBytes {
+		return reply(http.StatusRequestEntityTooLarge, "page too large")
+	}
+	var page assess.Page
+	if err := json.Unmarshal(body, &page); err != nil {
+		return reply(http.StatusBadRequest, "bad json")
+	}
+
+	var vals [3]string
+	for i, env := range []string{"ANTHROPIC_KEY_PARAM", "ASSESS_PROFILE_PARAM", "TELEGRAM_TOKEN_PARAM"} {
+		if vals[i], err = h.secret(ctx, mustEnv(env)); err != nil {
+			h.log.Error("clip parameter", "err", err)
+			return reply(http.StatusInternalServerError, "server error")
+		}
+	}
+	model := assess.Client{APIKey: vals[0], Model: h.deps.Cfg.Assess.Model}
+	n := notify.Telegram{Token: vals[2], ChatID: mustEnv("TELEGRAM_CHAT_ID")}
+	j, err := app.Clip(ctx, h.deps, model, n, vals[1], page)
+	switch {
+	case errors.Is(err, app.ErrBadClip):
+		return reply(http.StatusBadRequest, err.Error())
+	case err != nil:
+		h.log.Error("clip", "err", err)
+		return reply(http.StatusBadGateway, "assessment failed")
+	}
+	out, _ := json.Marshal(map[string]any{"score": j.Score, "verdict": j.Verdict})
+	return events.LambdaFunctionURLResponse{StatusCode: http.StatusOK, Body: string(out),
+		Headers: map[string]string{"content-type": "application/json"}}
+}
+
+func reply(status int, msg string) events.LambdaFunctionURLResponse {
+	out, _ := json.Marshal(map[string]string{"error": msg})
+	return events.LambdaFunctionURLResponse{StatusCode: status, Body: string(out),
+		Headers: map[string]string{"content-type": "application/json"}}
+}
+
+// header looks a name up regardless of case; function URLs lowercase names,
+// but a test or a proxy might not.
+func header(h map[string]string, name string) string {
+	for k, v := range h {
+		if strings.EqualFold(k, name) {
+			return v
+		}
+	}
+	return ""
 }
 
 func ptr[T any](v T) *T { return &v }
