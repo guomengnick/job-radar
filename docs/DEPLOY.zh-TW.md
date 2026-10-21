@@ -74,6 +74,30 @@ open "https://api.telegram.org/bot<你的token>/getUpdates"
 aws ssm put-parameter --region ap-southeast-2 --name /job-radar/telegram-bot-token --type SecureString --value '<你的token>'
 ```
 
+### 送到雷達需要的三個參數（不用這個功能可以跳過）
+
+clip 函式另外讀三個 SecureString，一樣手動建立，不進 git 或 Terraform state：
+
+- Anthropic API 金鑰：到 console.anthropic.com 建立，先在 Limits 設每月上限。下面這行會提示你貼上，畫面不顯示，也不留在指令歷史：
+
+```bash
+read -rs "KEY?Anthropic API key: " && aws ssm put-parameter --region ap-southeast-2 --name /job-radar/anthropic-api-key --type SecureString --value "$KEY" && unset KEY
+```
+
+- 擴充功能送來的密鑰，隨機產生：
+
+```bash
+aws ssm put-parameter --region ap-southeast-2 --name /job-radar/clip-secret --type SecureString --value "$(openssl rand -hex 32)"
+```
+
+- 你的評分檔案（技能、條件、紅旗、履歷版本規則）。這是個人資料，放在 repo 之外的檔案；超過 4 KB 要加 `--tier Advanced`：
+
+```bash
+aws ssm put-parameter --region ap-southeast-2 --name /job-radar/assess-profile --type SecureString --overwrite --value file://<你的評分檔案路徑>
+```
+
+部署後照 `extension/README.md` 安裝擴充功能。
+
 ## 4. 建立放 Terraform state 的 bucket（只做一次）
 
 ```bash
