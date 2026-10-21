@@ -16,10 +16,10 @@
 
 第一次按按鈕會自動打開設定頁。兩個值：
 
-接收網址：
+接收網址（複製到剪貼簿）：
 
 ```bash
-terraform -chdir=infra output -raw clip_url
+AWS_PROFILE=radar terraform -chdir=infra output -raw clip_url | pbcopy
 ```
 
 密鑰：下面這行會把密鑰複製到剪貼簿，不會顯示在畫面上，貼到設定頁的「密鑰」欄位：
