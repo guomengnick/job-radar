@@ -47,3 +47,15 @@ func TestMemoryRoundTrip(t *testing.T) {
 		t.Fatal("notified job still pending")
 	}
 }
+
+func TestMemorySaveAssessment(t *testing.T) {
+	m := NewMemory()
+	for _, score := range []int{40, 82} {
+		if err := m.SaveAssessment(context.Background(), Assessment{Key: "assess#x", Score: score}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if a, ok := m.Assessment("assess#x"); !ok || a.Score != 82 {
+		t.Errorf("a later judgement replaces the earlier one: %+v %v", a, ok)
+	}
+}

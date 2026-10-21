@@ -83,6 +83,20 @@ type Run struct {
 
 func (r Run) Duration() time.Duration { return r.FinishedAt.Sub(r.StartedAt) }
 
+// Assessment is one 送到雷達 judgement of a page the user sent, kept to
+// compare the model's verdicts with what the user went on to apply to.
+type Assessment struct {
+	Key        string    `json:"key" dynamodbav:"key"` // "assess#" + the job's key, or its URL
+	URL        string    `json:"url" dynamodbav:"url"`
+	Title      string    `json:"title" dynamodbav:"title"`
+	Company    string    `json:"company" dynamodbav:"company"`
+	Score      int       `json:"score" dynamodbav:"score"`
+	Verdict    string    `json:"verdict" dynamodbav:"verdict"`
+	Model      string    `json:"model" dynamodbav:"model"`
+	AssessedAt time.Time `json:"assessed_at" dynamodbav:"assessed_at"`
+	Detail     string    `json:"detail" dynamodbav:"detail"` // the full judgement as JSON
+}
+
 type Store interface {
 	ListBoards(ctx context.Context, ats string) ([]Board, error)
 	SaveBoards(ctx context.Context, boards []Board) error
@@ -94,4 +108,7 @@ type Store interface {
 	MarkNotified(ctx context.Context, keys []string, at time.Time) error
 	SaveRun(ctx context.Context, r Run) error
 	RunsSince(ctx context.Context, since time.Time) ([]Run, error)
+	// SaveAssessment stores a judgement, replacing an earlier one of the
+	// same page.
+	SaveAssessment(ctx context.Context, a Assessment) error
 }

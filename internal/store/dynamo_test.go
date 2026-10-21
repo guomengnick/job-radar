@@ -214,3 +214,19 @@ func TestDynamoRunsAndNotified(t *testing.T) {
 		t.Fatalf("a notified job must leave the pending index: %s %v", *u.UpdateExpression, u.ExpressionAttributeNames)
 	}
 }
+
+func TestDynamoSaveAssessment(t *testing.T) {
+	f := newFake()
+	d := NewDynamo(f, "boards", "jobs", "runs")
+	a := Assessment{Key: "assess#104#aaa01", URL: "https://www.104.com.tw/job/aaa01", Score: 82, Detail: `{"score":82}`}
+	if err := d.SaveAssessment(context.Background(), a); err != nil {
+		t.Fatal(err)
+	}
+	p := f.puts[0]
+	if *p.TableName != "jobs" || s(p.Item["key"]) != "assess#104#aaa01" || p.ConditionExpression != nil {
+		t.Fatalf("put = table %s key %v condition %v", *p.TableName, p.Item["key"], p.ConditionExpression)
+	}
+	if _, ok := p.Item["pending"]; ok {
+		t.Error("an assessment must stay out of the pending index")
+	}
+}
