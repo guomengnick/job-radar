@@ -65,8 +65,9 @@ func TestAssess(t *testing.T) {
 		t.Errorf("model = %v", f.got["model"])
 	}
 	choice, _ := f.got["tool_choice"].(map[string]any)
-	if choice["type"] != "tool" || choice["name"] != toolName {
-		t.Errorf("the tool must be forced: %v", f.got["tool_choice"])
+	tools, _ := f.got["tools"].([]any)
+	if choice["type"] != "auto" || len(tools) != 1 || tools[0].(map[string]any)["name"] != toolName {
+		t.Errorf("one tool, chosen by the model (newer models refuse a forced choice): %v %v", f.got["tool_choice"], tools)
 	}
 	system, _ := f.got["system"].([]any)
 	profile, _ := system[len(system)-1].(map[string]any)
