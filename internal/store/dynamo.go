@@ -206,6 +206,20 @@ func (d *Dynamo) SaveRun(ctx context.Context, r Run) error {
 	return err
 }
 
+// SaveAssessment puts the judgement in the jobs table under its own key
+// prefix. It has no pending attribute, so the digest never sees it.
+func (d *Dynamo) SaveAssessment(ctx context.Context, a Assessment) error {
+	item, err := attributevalue.MarshalMap(a)
+	if err != nil {
+		return err
+	}
+	_, err = d.db.PutItem(ctx, &dynamodb.PutItemInput{TableName: &d.jobs, Item: item})
+	if err != nil {
+		return fmt.Errorf("save assessment: %w", err)
+	}
+	return nil
+}
+
 func (d *Dynamo) RunsSince(ctx context.Context, since time.Time) ([]Run, error) {
 	p := dynamodb.NewQueryPaginator(d.db, &dynamodb.QueryInput{
 		TableName:              &d.runs,

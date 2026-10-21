@@ -24,6 +24,8 @@ type memoryData struct {
 	Boards map[string]map[string]Board `json:"boards"`
 	Jobs   map[string]JobRecord        `json:"jobs"`
 	Runs   []Run                       `json:"runs"`
+	// Assessments by key; nil in state files written before they existed.
+	Assessments map[string]Assessment `json:"assessments,omitempty"`
 }
 
 func NewMemory() *Memory {
@@ -152,6 +154,24 @@ func (m *Memory) SaveRun(_ context.Context, r Run) error {
 	defer m.mu.Unlock()
 	m.data.Runs = append(m.data.Runs, r)
 	return nil
+}
+
+func (m *Memory) SaveAssessment(_ context.Context, a Assessment) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.data.Assessments == nil {
+		m.data.Assessments = map[string]Assessment{}
+	}
+	m.data.Assessments[a.Key] = a
+	return nil
+}
+
+// Assessment returns the judgement stored under key, for tests and the CLI.
+func (m *Memory) Assessment(key string) (Assessment, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	a, ok := m.data.Assessments[key]
+	return a, ok
 }
 
 func (m *Memory) RunsSince(_ context.Context, since time.Time) ([]Run, error) {
