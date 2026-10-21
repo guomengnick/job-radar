@@ -198,3 +198,9 @@ boards:
     greenhouse: [appier, tenstorrent, anthropic, vercel, clickhouse, timescale, redpandadata, scylladb]
     lever: [Gogolook, nahc]
     ashby: [supabase, foxglove, applied]
+
+# 送到雷達: a job page sent from the browser extension is judged by this model
+# against the user's private profile (an SSM parameter, not in this repo).
+# One call per click; Sonnet for the full-text judgement.
+assess:
+  model: claude-sonnet-5-5

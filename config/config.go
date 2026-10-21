@@ -23,6 +23,12 @@ type Config struct {
 	Boards   BoardRules    `yaml:"boards"`
 	// Springboard judges Taichung office jobs from 104 alerts.
 	Springboard SpringboardRules `yaml:"springboard"`
+	Assess      AssessRules      `yaml:"assess"`
+}
+
+// AssessRules configure the model that judges a page sent from the browser.
+type AssessRules struct {
+	Model string `yaml:"model"`
 }
 
 type SpringboardRules struct {
@@ -124,6 +130,9 @@ func (c *Config) validate() error {
 	}
 	if c.Notify.MaxItems <= 0 {
 		c.Notify.MaxItems = 25
+	}
+	if c.Assess.Model == "" {
+		return fmt.Errorf("config: assess.model must be set")
 	}
 	return nil
 }
