@@ -37,6 +37,12 @@ locals {
     ]
     # Read stored mail; insert 104 alert jobs (conditional puts) and the run
     # record. No reads, updates or deletes on either table.
+    # Read its four parameters; store the judgement (assess# items).
+    clip = [
+      { actions = ["ssm:GetParameter"], resources = [for p in [var.anthropic_key_param, var.assess_profile_param, var.clip_secret_param, var.telegram_token_param] :
+      "arn:aws:ssm:${var.region}:${data.aws_caller_identity.me.account_id}:parameter${p}"] },
+      { actions = ["dynamodb:PutItem"], resources = [aws_dynamodb_table.jobs.arn] },
+    ]
     ingest = [
       { actions = ["s3:GetObject"], resources = [for b in aws_s3_bucket.mail : "${b.arn}/inbound/*"] },
       { actions = ["dynamodb:PutItem"], resources = [aws_dynamodb_table.jobs.arn, aws_dynamodb_table.runs.arn] },
