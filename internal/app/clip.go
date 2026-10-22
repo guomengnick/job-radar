@@ -48,7 +48,7 @@ func Clip(ctx context.Context, d Deps, a Assessor, n notify.Notifier, profile st
 		"input_tokens", usage.InputTokens, "output_tokens", usage.OutputTokens,
 		"cache_read_tokens", usage.CacheReadTokens, "cache_write_tokens", usage.CacheWriteTokens)
 
-	if err := n.Send(ctx, BuildAssessment(u.String(), j)); err != nil {
+	if err := n.Send(ctx, BuildAssessment(u.String(), j)+"\n"+usageLine(d.Cfg.Assess.Model, usage, false)); err != nil {
 		return j, fmt.Errorf("send assessment: %w", err)
 	}
 	detail, _ := json.Marshal(j)

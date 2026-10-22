@@ -135,7 +135,7 @@ func TestSubmitAndCheckBatch(t *testing.T) {
 		"<b>⏭ 略過：2</b>",
 		"頁面沒有文字，可能還沒載完",
 		"<b>⚠️ 失敗：1</b>\n" + `<a href="https://www.104.com.tw/job/old02">平台工程師</a>｜anthropic: prompt is too long`,
-		"💰 輸入 1000｜快取讀 3000｜快取寫 0｜輸出 2000 token",
+		"💰 輸入 1000｜快取讀 3000｜快取寫 0｜輸出 2000 token，約 US$0.022（批次半價）",
 	} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("summary missing %q:\n%s", want, msg)
@@ -166,13 +166,19 @@ func TestSubmitPagesAllLeftOut(t *testing.T) {
 	}
 }
 
-func TestBatchCost(t *testing.T) {
-	// Opus 5.5 at half price: 1M input $2, 1M output $10, 1M cache read $0.10, 1M one-hour write $4.
-	usd, ok := batchCost("claude-opus-5-5", assess.Usage{InputTokens: 1e6, OutputTokens: 1e6, CacheReadTokens: 1e6, CacheWriteTokens: 1e6})
-	if !ok || usd < 16.09 || usd > 16.11 {
-		t.Errorf("cost = %v %v", usd, ok)
+func TestCost(t *testing.T) {
+	// Opus 5.5: 1M input $4, 1M output $20, 1M cache read $0.20, 1M one-hour write $8; a batch half.
+	u := assess.Usage{InputTokens: 1e6, OutputTokens: 1e6, CacheReadTokens: 1e6, CacheWriteTokens: 1e6}
+	if usd, ok := cost("claude-opus-5-5", u, false); !ok || usd < 32.19 || usd > 32.21 {
+		t.Errorf("single = %v %v", usd, ok)
 	}
-	if _, ok := batchCost("unknown", assess.Usage{}); ok {
+	if usd, ok := cost("claude-opus-5-5", u, true); !ok || usd < 16.09 || usd > 16.11 {
+		t.Errorf("batch = %v %v", usd, ok)
+	}
+	if _, ok := cost("unknown", assess.Usage{}, false); ok {
 		t.Error("an unknown model has no price")
+	}
+	if got := usageLine("unknown", assess.Usage{InputTokens: 5}, false); got != "💰 輸入 5｜快取讀 0｜快取寫 0｜輸出 0 token" {
+		t.Errorf("no price, no cost: %q", got)
 	}
 }

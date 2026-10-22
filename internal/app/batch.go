@@ -331,11 +331,7 @@ func BuildBatchSummary(b store.Batch, results []batchResult, u assess.Usage) str
 		}
 	}
 	if u != (assess.Usage{}) {
-		fmt.Fprintf(&s, "\n💰 輸入 %d｜快取讀 %d｜快取寫 %d｜輸出 %d token", u.InputTokens, u.CacheReadTokens, u.CacheWriteTokens, u.OutputTokens)
-		if usd, ok := batchCost(b.Model, u); ok {
-			fmt.Fprintf(&s, "，約 US$%.2f", usd)
-		}
-		s.WriteString("\n")
+		s.WriteString("\n" + usageLine(b.Model, u, true))
 	}
 	return strings.TrimRight(s.String(), "\n")
 }
@@ -355,12 +351,28 @@ var prices = map[string][4]float64{
 	"claude-sonnet-5-5": {2, 10, 0.20, 4},
 }
 
-func batchCost(model string, u assess.Usage) (float64, bool) {
+// cost is what the usage cost in US$, if the model's price is known.
+func cost(model string, u assess.Usage, batch bool) (float64, bool) {
 	p, ok := prices[model]
 	if !ok {
 		return 0, false
 	}
-	usd := float64(u.InputTokens)*p[0] + float64(u.OutputTokens)*p[1] +
-		float64(u.CacheReadTokens)*p[2] + float64(u.CacheWriteTokens)*p[3]
-	return usd / 1e6 / 2, true
+	usd := (float64(u.InputTokens)*p[0] + float64(u.OutputTokens)*p[1] +
+		float64(u.CacheReadTokens)*p[2] + float64(u.CacheWriteTokens)*p[3]) / 1e6
+	if batch {
+		usd /= 2
+	}
+	return usd, true
+}
+
+// usageLine is the last line of a reply: the tokens used and their cost.
+func usageLine(model string, u assess.Usage, batch bool) string {
+	line := fmt.Sprintf("💰 輸入 %d｜快取讀 %d｜快取寫 %d｜輸出 %d token", u.InputTokens, u.CacheReadTokens, u.CacheWriteTokens, u.OutputTokens)
+	if usd, ok := cost(model, u, batch); ok {
+		line += fmt.Sprintf("，約 US$%.3f", usd)
+		if batch {
+			line += "（批次半價）"
+		}
+	}
+	return line
 }
