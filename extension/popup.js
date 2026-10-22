@@ -74,6 +74,29 @@ async function load() {
   say(jobs.length === 0 ? "這段時間沒有新的 104 職缺。" : "");
 }
 
+const batchButton = document.getElementById("batch");
+const batchStatus = document.getElementById("batch-status");
+
+async function countJobTabs() {
+  const tabs = await chrome.tabs.query({ url: "https://www.104.com.tw/job/*" });
+  batchButton.disabled = tabs.length === 0;
+  batchButton.textContent = tabs.length === 0 ? "沒有開著的 104 職缺頁" : `送出開著的 104 職缺（${tabs.length} 頁）`;
+}
+
+batchButton.addEventListener("click", async () => {
+  batchButton.disabled = true;
+  batchStatus.className = "hint";
+  batchStatus.textContent = "讀取分頁並送出中…";
+  const r = await chrome.runtime.sendMessage({ type: "batch" });
+  if (!r || r.error) {
+    batchStatus.className = "hint error";
+    batchStatus.textContent = "送出失敗：" + (r ? r.error : "沒有回應");
+    batchButton.disabled = false;
+    return;
+  }
+  batchStatus.textContent = `收到 ${r.received} 頁：送 AI 評分 ${r.submitted}｜規則排除 ${r.excluded}｜略過 ${r.skipped}。分頁可以關了，總表會傳到 Telegram。`;
+});
+
 document.getElementById("clip").addEventListener("click", async () => {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   await chrome.runtime.sendMessage({ type: "clip", tabId: tab.id });
@@ -97,3 +120,4 @@ day.value = day.max = isoDay(today);
 day.min = isoDay(new Date(today.getFullYear(), today.getMonth(), today.getDate() - MAX_DAYS_BACK));
 day.addEventListener("change", () => day.value && load());
 load();
+countJobTabs();

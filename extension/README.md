@@ -1,12 +1,19 @@
 # 送到雷達（Chrome 擴充功能）
 
-按一下工具列上的「送到雷達」圖示，會跳出一個小視窗，裡面有兩個功能：
+按一下工具列上的「送到雷達」圖示，會跳出一個小視窗，裡面有三個功能：
 
 **送出這一頁評分**：目前這一頁的文字送到 job-radar 的 clip 函式，由 Claude 依你的評分檔案評分，結果用 Telegram 回覆。
 
 - 圖示上的徽章：`…` 評分中，數字是分數（綠 75 以上、黃 55–74、紅 55 以下），`✗` 是失敗（原因看 Telegram 或 CloudWatch 的 `/aws/lambda/job-radar-clip`）。
 - 只有在你按下按鈕時，才會讀取目前這一頁（`activeTab` 權限），不會自己去讀任何網頁。
 - 頁面是你自己用瀏覽器正常打開的，擴充功能只讀你畫面上已經顯示的文字。
+
+**批次送到雷達**：所有開著的 104 職缺頁一次送出，由 Claude 用批次 API 評分（半價），總表通常一小時內用 Telegram 傳來。
+
+- 送出後馬上會收到「收到幾頁、送 AI 幾頁、規則排除幾頁、略過幾頁」，分頁就可以關了。
+- 規則排除：職稱、地點或薪資符合 SSM 參數 `/job-radar/batch-rules` 的不送 AI，但總表會列出來給你抽查。怎麼改見 `docs/DEPLOY.zh-TW.md`。
+- 略過：兩週內評過的同一個職缺，或還沒載完、被 Chrome 暫停的分頁（總表上會寫原因，重新整理後再送一次即可）。
+- 這個功能要讀「不在最前面」的分頁，所以需要兩個權限：讀分頁網址（`tabs`），和讀 `www.104.com.tw` 的頁面。重新載入時 Chrome 會問你。只有按下按鈕時才讀，而且只讀 104 職缺頁。
 
 **開啟 104 配對信的職缺**：列出從某一天起，104 配對信裡第一次出現的職缺，分成三組，每組都可以勾選要不要開：
 
@@ -50,4 +57,4 @@ aws ssm put-parameter --profile radar --region ap-southeast-2 --name /job-radar/
 
 ## 費用
 
-一次評分是一次 Claude 呼叫（`config/radar.yml` 的 `assess.model`）。花費上限請設在 Anthropic Console 的 Limits。
+單頁評分是一次 Claude 呼叫；批次是半價的 Message Batch，總表最後一行會寫這批用了多少 token、約多少美元。模型和思考強度在 `config/radar.yml` 的 `assess`。花費上限請設在 Anthropic Console 的 Limits。

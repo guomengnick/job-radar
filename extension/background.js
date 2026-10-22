@@ -6,10 +6,12 @@
 //   shows the score, "…" while waiting, or "✗" on failure.
 // - list / open: ask the endpoint for the 104 alert jobs (GET /jobs) and open
 //   the ones the user ticked, one tab at a time, in a new window.
+// - batch: read every open 104 job tab and send them all (POST /batch); the
+//   model judges them as one batch and the summary arrives on Telegram.
 //
-// activeTab grants access to the current tab only when the user clicks, so
-// the extension never reads pages on its own. Tabs are opened only from the
-// popup's button, never in the background.
+// Pages are read only when the user presses a button: the current tab
+// (activeTab), or the open 104 job tabs (the www.104.com.tw permission).
+// Tabs are opened only from the popup's button, never in the background.
 
 // `make extension-config` writes config.local.js with the endpoint and
 // secret, so a fresh install works without visiting the options page.
@@ -23,6 +25,11 @@ try {
 // and 50 pages take about a minute and a quarter.
 const OPEN_GAP_MS = 1500;
 const JOB_URL = /^https:\/\/www\.104\.com\.tw\/job\/[0-9a-z]+$/;
+const JOB_TABS = "https://www.104.com.tw/job/*";
+// The model reads at most this much of a page (assess.MaxPageRunes), and one
+// request must stay under the endpoint's 5 MB.
+const PAGE_CHARS = 20000;
+const BATCH_BYTES = 4 << 20;
 
 async function settings() {
   const saved = await chrome.storage.local.get(["endpoint", "secret"]);
@@ -48,6 +55,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       openJobs(msg.urls).catch((err) => console.error("開啟職缺失敗", err));
       sendResponse({ ok: true });
       return false;
+    case "batch":
+      sendBatch().then(sendResponse, (err) => sendResponse({ error: err.message }));
+      return true;
   }
   return false;
 });
@@ -113,6 +123,73 @@ async function openJobs(urls) {
     opening = false;
     await chrome.action.setBadgeText({ text: "" });
   }
+}
+
+let sending = false;
+
+// sendBatch reads every open 104 job tab and posts the pages. A tab that is
+// still loading or was unloaded by Chrome is sent with no text, so the
+// summary lists it instead of dropping it. Pages are split into requests of
+// at most BATCH_BYTES; each request is its own batch.
+async function sendBatch() {
+  if (sending) throw new Error("上一批還在送");
+  sending = true;
+  await chrome.action.setBadgeBackgroundColor({ color: "#757575" });
+  await chrome.action.setBadgeText({ text: "…" });
+  try {
+    const tabs = await chrome.tabs.query({ url: JOB_TABS });
+    if (tabs.length === 0) throw new Error("沒有開著的 104 職缺頁");
+    const pages = [];
+    for (const tab of tabs) {
+      let page = { url: tab.url, title: tab.title || "", text: "" };
+      if (!tab.discarded && tab.status === "complete") {
+        try {
+          const [{ result }] = await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: readPage });
+          page = { ...result, text: result.text.slice(0, PAGE_CHARS) };
+        } catch (err) {
+          console.warn("讀不到分頁", tab.url, err);
+        }
+      }
+      pages.push(page);
+    }
+    const total = { received: 0, submitted: 0, excluded: 0, skipped: 0, requests: 0 };
+    for (const chunk of chunks(pages)) {
+      const r = await call("/batch", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ pages: chunk }),
+      });
+      for (const k of ["received", "submitted", "excluded", "skipped"]) total[k] += r[k] || 0;
+      total.requests++;
+    }
+    await chrome.action.setBadgeBackgroundColor({ color: "#2e7d32" });
+    await chrome.action.setBadgeText({ text: String(total.received) });
+    return total;
+  } catch (err) {
+    await chrome.action.setBadgeBackgroundColor({ color: "#c62828" });
+    await chrome.action.setBadgeText({ text: "✗" });
+    throw err;
+  } finally {
+    sending = false;
+  }
+}
+
+function chunks(pages) {
+  const out = [];
+  let cur = [];
+  let size = 0;
+  for (const p of pages) {
+    const n = new Blob([JSON.stringify(p)]).size;
+    if (cur.length > 0 && size + n > BATCH_BYTES) {
+      out.push(cur);
+      cur = [];
+      size = 0;
+    }
+    cur.push(p);
+    size += n;
+  }
+  if (cur.length > 0) out.push(cur);
+  return out;
 }
 
 // Runs inside the page. It must be self-contained: Chrome serializes it.
