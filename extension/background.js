@@ -5,8 +5,25 @@
 // activeTab grants access to the current tab only when the user clicks, so
 // the extension never reads pages on its own.
 
+// `make extension-config` writes config.local.js with the endpoint and
+// secret, so a fresh install works without visiting the options page.
+try {
+  importScripts("config.local.js");
+} catch (e) {
+  // No local config: the options page is the only source.
+}
+
+async function settings() {
+  const saved = await chrome.storage.local.get(["endpoint", "secret"]);
+  const defaults = self.RADAR_DEFAULTS || {};
+  return {
+    endpoint: saved.endpoint || defaults.endpoint,
+    secret: saved.secret || defaults.secret,
+  };
+}
+
 chrome.action.onClicked.addListener(async (tab) => {
-  const { endpoint, secret } = await chrome.storage.local.get(["endpoint", "secret"]);
+  const { endpoint, secret } = await settings();
   if (!endpoint || !secret) {
     chrome.runtime.openOptionsPage();
     return;

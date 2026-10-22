@@ -14,12 +14,13 @@
 </head>
 <body>
   <h1>送到雷達</h1>
-  <p>兩個值都只存在這台電腦的 Chrome 裡。取得方式見 extension/README.md。</p>
+  <p>執行過 make extension-config 的話，這兩欄已經自動填好，不用改。兩個值都只存在這台電腦的 Chrome 裡。</p>
   <label for="endpoint">接收網址（terraform output clip_url）</label>
   <input id="endpoint" type="url" placeholder="https://….lambda-url.ap-southeast-2.on.aws/">
   <label for="secret">密鑰（SSM /job-radar/clip-secret）</label>
   <input id="secret" type="password" autocomplete="off">
   <button id="save">儲存</button><span id="status"></span>
+  <script src="config.local.js"></script>
   <script src="options.js"></script>
 </body>
 </html>

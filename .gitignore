@@ -20,3 +20,6 @@ infra/backend.hcl
 
 .env
 .DS_Store
+
+# Written by `make extension-config`: the clip endpoint and secret.
+extension/config.local.js

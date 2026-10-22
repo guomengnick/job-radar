@@ -8,29 +8,27 @@
 
 ## 安裝（每台電腦一次）
 
-1. Chrome 開 `chrome://extensions`，打開右上角的「開發人員模式」。
-2. 按「載入未封裝項目」，選這個 `extension` 資料夾。
-3. 把「送到雷達」釘選到工具列（拼圖圖示 → 圖釘）。
-
-## 設定接收網址和密鑰
-
-第一次按按鈕會自動打開設定頁。兩個值：
-
-接收網址（複製到剪貼簿）：
+1. 在 repo 根目錄執行下面這行。它從 AWS 讀出接收網址和密鑰，寫進 `extension/config.local.js`（不會進 git），密鑰不會顯示在畫面上：
 
 ```bash
-AWS_PROFILE=radar terraform -chdir=infra output -raw clip_url | pbcopy
+AWS_PROFILE=radar make extension-config
 ```
 
-密鑰：下面這行會把密鑰複製到剪貼簿，不會顯示在畫面上，貼到設定頁的「密鑰」欄位：
+2. Chrome 開 `chrome://extensions`（Edge 是 `edge://extensions`），打開右上角的「開發人員模式」。
+3. 按「載入未封裝項目」，選這個 `extension` 資料夾。已經載入過的話，按擴充功能卡片上的重新載入圖示。
+4. 把「送到雷達」釘選到工具列（拼圖圖示 → 圖釘）。
 
-```bash
-aws ssm get-parameter --profile radar --region ap-southeast-2 --name /job-radar/clip-secret --with-decryption --query Parameter.Value --output text | tr -d '\n' | pbcopy
-```
+設定頁會自動填好，不用打開。
+
+### 另一台電腦（例如 Windows）
+
+把跑過 `make extension-config` 的整個 `extension` 資料夾複製過去（隨身碟、雲端硬碟都可以），再照上面第 2～4 步載入。這個資料夾裡有密鑰，不要公開分享。
+
+沒有那個檔案的話，也可以在設定頁手動貼上兩個值：接收網址是 `terraform -chdir=infra output -raw clip_url`，密鑰是 SSM 的 `/job-radar/clip-secret`。
 
 ## 換密鑰
 
-密鑰外洩時，產生新的、覆蓋舊的，再到設定頁貼上新值：
+密鑰外洩時，產生新的、覆蓋舊的，再重新執行 `make extension-config` 並重新載入擴充功能（手動填過設定頁的話，要在設定頁換成新值）：
 
 ```bash
 aws ssm put-parameter --profile radar --region ap-southeast-2 --name /job-radar/clip-secret --type SecureString --overwrite --value "$(openssl rand -hex 32)"

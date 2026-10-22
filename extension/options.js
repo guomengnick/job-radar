@@ -2,9 +2,11 @@ const endpoint = document.getElementById("endpoint");
 const secret = document.getElementById("secret");
 const status = document.getElementById("status");
 
+// config.local.js (from make extension-config) may set the defaults.
+const defaults = window.RADAR_DEFAULTS || {};
 chrome.storage.local.get(["endpoint", "secret"]).then((v) => {
-  endpoint.value = v.endpoint || "";
-  secret.value = v.secret || "";
+  endpoint.value = v.endpoint || defaults.endpoint || "";
+  secret.value = v.secret || defaults.secret || "";
 });
 
 document.getElementById("save").addEventListener("click", async () => {

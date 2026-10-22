@@ -1,4 +1,4 @@
-.PHONY: test vet build lambda plan apply clean
+.PHONY: test vet build lambda plan apply clean extension-config
 
 test:
 	go test -race ./...
@@ -23,3 +23,12 @@ apply: lambda
 
 clean:
 	rm -rf build
+
+# Pre-fills the 送到雷達 extension's settings, so nobody copies values out of
+# the AWS console. The file holds the clip secret: it is git-ignored, and the
+# secret goes from AWS straight into the file without being printed.
+extension-config:
+	@url=$$(terraform -chdir=infra output -raw clip_url) && \
+	secret=$$(aws ssm get-parameter --region ap-southeast-2 --name /job-radar/clip-secret --with-decryption --query Parameter.Value --output text) && \
+	umask 077 && printf 'self.RADAR_DEFAULTS = { endpoint: "%s", secret: "%s" };\n' "$$url" "$$secret" > extension/config.local.js && \
+	echo "wrote extension/config.local.js; reload the extension in chrome://extensions"
