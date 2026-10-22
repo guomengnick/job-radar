@@ -78,3 +78,16 @@ func TestMemoryJobsSince(t *testing.T) {
 		t.Fatalf("want the two 104 jobs from the bound on, oldest first: %+v %v", jobs, err)
 	}
 }
+
+func TestMemoryBatches(t *testing.T) {
+	ctx := context.Background()
+	m := NewMemory()
+	at := time.Date(2026, 10, 23, 1, 0, 0, 0, time.UTC)
+	m.SaveBatch(ctx, Batch{Key: "batch#2", Pending: BatchPending, SubmittedAt: at.Add(time.Minute)})
+	m.SaveBatch(ctx, Batch{Key: "batch#1", Pending: BatchPending, SubmittedAt: at})
+	m.CloseBatch(ctx, "batch#2", at)
+	open, _ := m.OpenBatches(ctx)
+	if len(open) != 1 || open[0].Key != "batch#1" {
+		t.Fatalf("open = %+v", open)
+	}
+}

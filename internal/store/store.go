@@ -97,6 +97,37 @@ type Assessment struct {
 	Detail     string    `json:"detail" dynamodbav:"detail"` // the full judgement as JSON
 }
 
+// Batch is one set of pages sent with the extension's batch button, kept
+// from submission until its summary goes out.
+type Batch struct {
+	Key string `json:"key" dynamodbav:"key"` // "batch#" + the Anthropic batch ID
+	// Pending is "batch" until the summary is sent, which puts the record in
+	// pending-index (the digest reads only "new" there).
+	Pending     string      `json:"-" dynamodbav:"pending,omitempty"`
+	SubmittedAt time.Time   `json:"submitted_at" dynamodbav:"first_seen"` // pending-index's sort key
+	BatchID     string      `json:"batch_id" dynamodbav:"batch_id"`
+	Model       string      `json:"model" dynamodbav:"model"`
+	Items       []BatchItem `json:"items" dynamodbav:"items"`
+	// Left out before the model: excluded by a rule, judged recently, or
+	// not readable in the browser.
+	Excluded []BatchItem `json:"excluded,omitempty" dynamodbav:"excluded,omitempty"`
+	Skipped  []BatchItem `json:"skipped,omitempty" dynamodbav:"skipped,omitempty"`
+	ClosedAt time.Time   `json:"closed_at" dynamodbav:"closed_at"`
+}
+
+// BatchItem is one page of a batch: ID names its request in the batch, Key
+// is the job's key, Reason why it was left out, if it was.
+type BatchItem struct {
+	ID     string `json:"id,omitempty" dynamodbav:"id,omitempty"`
+	Key    string `json:"key" dynamodbav:"key"`
+	URL    string `json:"url" dynamodbav:"url"`
+	Title  string `json:"title" dynamodbav:"title"`
+	Reason string `json:"reason,omitempty" dynamodbav:"reason,omitempty"`
+}
+
+// BatchPending marks an open batch in pending-index.
+const BatchPending = "batch"
+
 type Store interface {
 	ListBoards(ctx context.Context, ats string) ([]Board, error)
 	SaveBoards(ctx context.Context, boards []Board) error
@@ -114,4 +145,12 @@ type Store interface {
 	// SaveAssessment stores a judgement, replacing an earlier one of the
 	// same page.
 	SaveAssessment(ctx context.Context, a Assessment) error
+	// AssessmentOf returns the judgement stored under key ("assess#…").
+	AssessmentOf(ctx context.Context, key string) (Assessment, bool, error)
+	// SaveBatch stores a batch; with Pending set it is open.
+	SaveBatch(ctx context.Context, b Batch) error
+	// OpenBatches returns the batches whose summary has not gone out.
+	OpenBatches(ctx context.Context) ([]Batch, error)
+	// CloseBatch takes a batch out of the open ones.
+	CloseBatch(ctx context.Context, key string, at time.Time) error
 }

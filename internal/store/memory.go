@@ -26,6 +26,7 @@ type memoryData struct {
 	Runs   []Run                       `json:"runs"`
 	// Assessments by key; nil in state files written before they existed.
 	Assessments map[string]Assessment `json:"assessments,omitempty"`
+	Batches     map[string]Batch      `json:"batches,omitempty"`
 }
 
 func NewMemory() *Memory {
@@ -182,6 +183,46 @@ func (m *Memory) SaveAssessment(_ context.Context, a Assessment) error {
 		m.data.Assessments = map[string]Assessment{}
 	}
 	m.data.Assessments[a.Key] = a
+	return nil
+}
+
+func (m *Memory) AssessmentOf(_ context.Context, key string) (Assessment, bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	a, ok := m.data.Assessments[key]
+	return a, ok, nil
+}
+
+func (m *Memory) SaveBatch(_ context.Context, b Batch) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.data.Batches == nil {
+		m.data.Batches = map[string]Batch{}
+	}
+	m.data.Batches[b.Key] = b
+	return nil
+}
+
+func (m *Memory) OpenBatches(_ context.Context) ([]Batch, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []Batch
+	for _, b := range m.data.Batches {
+		if b.Pending == BatchPending {
+			out = append(out, b)
+		}
+	}
+	sort.Slice(out, func(i, k int) bool { return out[i].SubmittedAt.Before(out[k].SubmittedAt) })
+	return out, nil
+}
+
+func (m *Memory) CloseBatch(_ context.Context, key string, at time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if b, ok := m.data.Batches[key]; ok {
+		b.Pending, b.ClosedAt = "", at
+		m.data.Batches[key] = b
+	}
 	return nil
 }
 

@@ -29,6 +29,8 @@ type fakeDynamo struct {
 	unprocessed int // items to hand back unprocessed on the first batch call
 	written     map[string]int
 	putErr      error
+	gets        []*dynamodb.GetItemInput
+	item        map[string]types.AttributeValue // what GetItem answers
 }
 
 func newFake() *fakeDynamo {
@@ -51,6 +53,13 @@ func (f *fakeDynamo) Query(_ context.Context, in *dynamodb.QueryInput, _ ...func
 		out.LastEvaluatedKey = map[string]types.AttributeValue{"page": &types.AttributeValueMemberN{Value: strconv.Itoa(page + 1)}}
 	}
 	return out, nil
+}
+
+func (f *fakeDynamo) GetItem(_ context.Context, in *dynamodb.GetItemInput, _ ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.gets = append(f.gets, in)
+	return &dynamodb.GetItemOutput{Item: f.item}, nil
 }
 
 func (f *fakeDynamo) PutItem(_ context.Context, in *dynamodb.PutItemInput, _ ...func(*dynamodb.Options)) (*dynamodb.PutItemOutput, error) {
@@ -266,5 +275,53 @@ func TestTimeBoundSortsLikeTime(t *testing.T) {
 				t.Errorf("%s >= %s is %v, but the time is at or after the bound: %v", stored, timeBound(bound), got, want)
 			}
 		}
+	}
+}
+
+func TestDynamoBatches(t *testing.T) {
+	ctx := context.Background()
+	f := newFake()
+	d := NewDynamo(f, "boards", "jobs", "runs")
+	at := time.Date(2026, 10, 23, 1, 0, 0, 0, time.UTC)
+	b := Batch{Key: "batch#msgbatch_1", Pending: BatchPending, SubmittedAt: at, BatchID: "msgbatch_1",
+		Items: []BatchItem{{ID: "p0", Key: "104#aaa01", URL: "https://www.104.com.tw/job/aaa01", Title: "後端"}}}
+	if err := d.SaveBatch(ctx, b); err != nil {
+		t.Fatal(err)
+	}
+	item := f.puts[0].Item
+	// pending-index is keyed on pending and first_seen.
+	if s(item["pending"]) != "batch" || s(item["first_seen"]) != "2026-10-23T01:00:00Z" {
+		t.Fatalf("index keys: %v %v", item["pending"], item["first_seen"])
+	}
+	if _, ok := item["ats"]; ok {
+		t.Error("a batch must stay out of the source index")
+	}
+
+	f.pages = [][]map[string]types.AttributeValue{{item}}
+	open, err := d.OpenBatches(ctx)
+	if err != nil || len(open) != 1 || open[0].BatchID != "msgbatch_1" || open[0].Items[0].Key != "104#aaa01" {
+		t.Fatalf("open=%+v err=%v", open, err)
+	}
+	if q := f.queries[0]; *q.IndexName != "pending-index" || s(q.ExpressionAttributeValues[":b"]) != "batch" {
+		t.Fatalf("query = %+v", q)
+	}
+	if err := d.CloseBatch(ctx, b.Key, at); err != nil {
+		t.Fatal(err)
+	}
+	if u := f.updates[0]; !strings.Contains(*u.UpdateExpression, "REMOVE pending") || s(u.Key["key"]) != b.Key {
+		t.Fatalf("close = %s", *u.UpdateExpression)
+	}
+}
+
+func TestDynamoAssessmentOf(t *testing.T) {
+	f := newFake()
+	d := NewDynamo(f, "boards", "jobs", "runs")
+	if _, ok, err := d.AssessmentOf(context.Background(), "assess#104#aaa01"); ok || err != nil {
+		t.Fatalf("missing item: ok=%v err=%v", ok, err)
+	}
+	f.item, _ = attributevalue.MarshalMap(Assessment{Key: "assess#104#aaa01", Score: 70})
+	a, ok, err := d.AssessmentOf(context.Background(), "assess#104#aaa01")
+	if !ok || err != nil || a.Score != 70 || s(f.gets[1].Key["key"]) != "assess#104#aaa01" {
+		t.Fatalf("a=%+v ok=%v err=%v", a, ok, err)
 	}
 }
