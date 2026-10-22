@@ -230,3 +230,41 @@ func TestDynamoSaveAssessment(t *testing.T) {
 		t.Error("an assessment must stay out of the pending index")
 	}
 }
+
+func TestDynamoJobsSince(t *testing.T) {
+	f := newFake()
+	item, err := attributevalue.MarshalMap(JobRecord{Key: "104#aaa01", ATS: "104", Title: "後端工程師", State: JobSeen})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.pages = [][]map[string]types.AttributeValue{{item}, {item}}
+	since := time.Date(2026, 10, 21, 16, 0, 0, 250, time.FixedZone("Taipei", 8*3600))
+	jobs, err := NewDynamo(f, "boards", "jobs", "runs").JobsSince(context.Background(), "104", since)
+	if err != nil || len(jobs) != 2 || jobs[0].Title != "後端工程師" || jobs[0].State != JobSeen {
+		t.Fatalf("jobs=%+v err=%v", jobs, err)
+	}
+	q := f.queries[0]
+	if *q.IndexName != "source-index" || *q.KeyConditionExpression != "ats = :a AND first_seen >= :s" ||
+		s(q.ExpressionAttributeValues[":a"]) != "104" || s(q.ExpressionAttributeValues[":s"]) != "2026-10-21T08:00:00.000000000Z" {
+		t.Fatalf("query = index %v, %s, %v", q.IndexName, *q.KeyConditionExpression, q.ExpressionAttributeValues)
+	}
+}
+
+// The index compares first_seen as strings, so the bound must sort like the
+// times it stands for against every form the marshaller writes.
+func TestTimeBoundSortsLikeTime(t *testing.T) {
+	bound := time.Date(2026, 10, 21, 16, 0, 0, 0, time.UTC)
+	for _, ns := range []int{0, 1, 250_000_000, 999_999_999} {
+		for _, sec := range []int{-1, 0, 1} {
+			at := bound.Add(time.Duration(sec)*time.Second + time.Duration(ns))
+			av, err := attributevalue.Marshal(at)
+			if err != nil {
+				t.Fatal(err)
+			}
+			stored := s(av)
+			if got, want := stored >= timeBound(bound), !at.Before(bound); got != want {
+				t.Errorf("%s >= %s is %v, but the time is at or after the bound: %v", stored, timeBound(bound), got, want)
+			}
+		}
+	}
+}

@@ -15,7 +15,8 @@ import (
 // Dynamo backs Store with three on-demand tables (see infra/dynamodb.tf):
 //
 //	boards: PK ats, SK slug
-//	jobs:   PK key; sparse GSI "pending-index" (pending, first_seen) = unsent jobs
+//	jobs:   PK key; sparse GSI "pending-index" (pending, first_seen) = unsent jobs;
+//	        GSI "source-index" (ats, first_seen) = every job by source and time
 //	runs:   PK pk="run", SK sk="<started_at>#<ats>#<task>"; TTL on expires_at
 type Dynamo struct {
 	db                 DynamoAPI
@@ -32,7 +33,10 @@ type DynamoAPI interface {
 	BatchWriteItem(context.Context, *dynamodb.BatchWriteItemInput, ...func(*dynamodb.Options)) (*dynamodb.BatchWriteItemOutput, error)
 }
 
-const pendingIndex = "pending-index"
+const (
+	pendingIndex = "pending-index"
+	sourceIndex  = "source-index"
+)
 
 func NewDynamo(db DynamoAPI, boardsTable, jobsTable, runsTable string) *Dynamo {
 	return &Dynamo{db: db, boards: boardsTable, jobs: jobsTable, runs: runsTable, runTTL: 90 * 24 * time.Hour}
@@ -163,6 +167,40 @@ func (d *Dynamo) PendingJobs(ctx context.Context) ([]JobRecord, error) {
 		out = append(out, js...)
 	}
 	return out, nil
+}
+
+func (d *Dynamo) JobsSince(ctx context.Context, ats string, since time.Time) ([]JobRecord, error) {
+	p := dynamodb.NewQueryPaginator(d.db, &dynamodb.QueryInput{
+		TableName:              &d.jobs,
+		IndexName:              aws.String(sourceIndex),
+		KeyConditionExpression: aws.String("ats = :a AND first_seen >= :s"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{
+			":a": &types.AttributeValueMemberS{Value: ats},
+			":s": &types.AttributeValueMemberS{Value: timeBound(since)},
+		},
+	})
+	var out []JobRecord
+	for p.HasMorePages() {
+		page, err := p.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("jobs since: %w", err)
+		}
+		var js []JobRecord
+		if err := attributevalue.UnmarshalListOfMaps(page.Items, &js); err != nil {
+			return nil, err
+		}
+		out = append(out, js...)
+	}
+	return out, nil
+}
+
+// timeBound writes since for comparison with stored times. Those are
+// RFC 3339 strings in UTC that drop trailing zeros of the fraction
+// ("…:05Z", "…:05.25Z"), and as strings "…:05Z" sorts after "…:05.25Z".
+// A bound with all nine fraction digits sorts correctly against both forms;
+// since is cut to the second first.
+func timeBound(since time.Time) string {
+	return since.UTC().Truncate(time.Second).Format("2006-01-02T15:04:05.000000000Z07:00")
 }
 
 func (d *Dynamo) MarkNotified(ctx context.Context, keys []string, at time.Time) error {

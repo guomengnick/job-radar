@@ -105,6 +105,9 @@ type Store interface {
 	// InsertJobIfNew stores j unless its key exists; true means it was new.
 	InsertJobIfNew(ctx context.Context, j JobRecord) (bool, error)
 	PendingJobs(ctx context.Context) ([]JobRecord, error)
+	// JobsSince returns the jobs from one source (the ats field) first seen
+	// at or after since, oldest first, whatever their state.
+	JobsSince(ctx context.Context, ats string, since time.Time) ([]JobRecord, error)
 	MarkNotified(ctx context.Context, keys []string, at time.Time) error
 	SaveRun(ctx context.Context, r Run) error
 	RunsSince(ctx context.Context, since time.Time) ([]Run, error)

@@ -59,3 +59,22 @@ func TestMemorySaveAssessment(t *testing.T) {
 		t.Errorf("a later judgement replaces the earlier one: %+v %v", a, ok)
 	}
 }
+
+func TestMemoryJobsSince(t *testing.T) {
+	ctx := context.Background()
+	m := NewMemory()
+	at := time.Date(2026, 10, 22, 0, 0, 0, 0, time.UTC)
+	for key, j := range map[string]JobRecord{
+		"104#old":   {ATS: "104", FirstSeen: at.Add(-time.Second)},
+		"104#later": {ATS: "104", FirstSeen: at.Add(time.Hour), State: JobSeen},
+		"104#first": {ATS: "104", FirstSeen: at, State: JobNew},
+		"lever#a#1": {ATS: "lever", FirstSeen: at},
+	} {
+		j.Key = key
+		m.InsertJobIfNew(ctx, j)
+	}
+	jobs, err := m.JobsSince(ctx, "104", at)
+	if err != nil || len(jobs) != 2 || jobs[0].Key != "104#first" || jobs[1].Key != "104#later" {
+		t.Fatalf("want the two 104 jobs from the bound on, oldest first: %+v %v", jobs, err)
+	}
+}
