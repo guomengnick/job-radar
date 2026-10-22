@@ -151,10 +151,12 @@ skills:
 # and words in neither list (演算法, MES, 測試) pass without a bonus. ASCII
 # words match whole words, but may touch Chinese ("AI工程師" has "ai").
 # Approved by the user 2026-10-18; 行銷, 行政, 人資 and 校園徵才 added 2026-10-20
-# after the first real alert.
+# after the first real alert; 現場工程師 2026-10-22 (the whole word: 現場 alone
+# would drop a remote role that "需不定期現場支援"). The digest lists what these
+# drop, so a wrong rule shows.
 springboard:
   title_plus: [後端, 全端, 軟體工程師, 資料工程, 數據工程, 平台, 雲端, devops, sre, .net, "c#", python, go, ai, 機器學習, 系統分析, 技術主管, 架構師]
-  title_exclude: [plc, 韌體, 電控, 硬體, 機構, 助理, 實習, 工讀, 業務, 儲備幹部, 客服, 講師, 行銷, 行政, 人資, 校園徵才]
+  title_exclude: [plc, 韌體, 電控, 硬體, 機構, 助理, 實習, 工讀, 業務, 儲備幹部, 客服, 講師, 行銷, 行政, 人資, 校園徵才, 現場工程師]
   # "Pay clearly above the current NT$880k", on the top of the posted range:
   # NT$1M a year, or a monthly range reaching NT$70k (1M / 14 months).
   # 面議 only implies NT$40k a month or more, so it is listed as unknown.
