@@ -50,7 +50,15 @@ func Digest(ctx context.Context, d Deps, n notify.Notifier, o DigestOptions) (st
 	boardJobs, alertJobs, contacts := splitBySource(pending)
 	shown := append(append(boardJobs[:min(len(boardJobs), d.Cfg.Notify.MaxItems)], alertJobs...), contacts...)
 
-	msg := BuildDigest(now.In(o.Location), runs, shown, len(pending)-len(shown), o.ExpectedATS)
+	// The 104 jobs the digest does not send are listed too, one line each,
+	// so the user can check what the rules drop. Failing to read them only
+	// costs that part of the message.
+	left, leftErr := leftOutAlertJobs(ctx, d, now.Add(-o.Window))
+	msg := BuildDigest(now.In(o.Location), runs, shown, left, len(pending)-len(shown), o.ExpectedATS)
+	if leftErr != nil {
+		d.Log.Error("digest: list left-out 104 jobs", "err", leftErr)
+		msg += "\n⚠️ 沒列出的 104 職缺讀取失敗，原因見 CloudWatch。"
+	}
 	if err := n.Send(ctx, msg); err != nil {
 		return msg, err
 	}
@@ -64,8 +72,29 @@ func Digest(ctx context.Context, d Deps, n notify.Notifier, o DigestOptions) (st
 	return msg, d.Store.MarkNotified(ctx, keys, now)
 }
 
-// BuildDigest renders the Telegram message (HTML parse mode).
-func BuildDigest(now time.Time, runs []store.Run, jobs []store.JobRecord, more int, expected []string) string {
+// leftOutAlertJobs returns the 104 alert jobs first seen since the given
+// time that the digest does not send: those a rule excluded, then those
+// outside the searched places.
+func leftOutAlertJobs(ctx context.Context, d Deps, since time.Time) ([]store.JobRecord, error) {
+	recs, err := d.Store.JobsSince(ctx, alertATS, since)
+	if err != nil {
+		return nil, err
+	}
+	var excluded, elsewhere []store.JobRecord
+	for _, r := range recs {
+		switch alertGroup(r) {
+		case GroupExcluded:
+			excluded = append(excluded, r)
+		case GroupElsewhere:
+			elsewhere = append(elsewhere, r)
+		}
+	}
+	return append(excluded, elsewhere...), nil
+}
+
+// BuildDigest renders the Telegram message (HTML parse mode). left holds the
+// 104 alert jobs the digest does not send, listed one line each.
+func BuildDigest(now time.Time, runs []store.Run, jobs, left []store.JobRecord, more int, expected []string) string {
 	boardJobs, alertJobs, contacts := splitBySource(jobs)
 	var b strings.Builder
 	fmt.Fprintf(&b, "<b>📡 職缺雷達 %s</b>\n\n", now.Format("01/02 15:04"))
@@ -148,6 +177,7 @@ func BuildDigest(now time.Time, runs []store.Run, jobs []store.JobRecord, more i
 			fmt.Fprintf(&b, "注意：%s\n", html.EscapeString(strings.Join(j.Notes, "、")))
 		}
 	}
+	writeLeftOut(&b, left)
 	if more > 0 {
 		fmt.Fprintf(&b, "\n另有 %d 筆留到下次。\n", more)
 	}
@@ -173,6 +203,31 @@ func splitBySource(jobs []store.JobRecord) (board, alert, contacts []store.JobRe
 		}
 	}
 	return board, alert, contacts
+}
+
+// writeLeftOut lists, one line each, the 104 jobs a rule excluded and those
+// outside the searched places, so a rule that drops good jobs shows.
+func writeLeftOut(b *strings.Builder, left []store.JobRecord) {
+	sections := []struct{ group, title, hint string }{
+		{GroupExcluded, "🚫 規則排除（沒送出）", "請抽查有沒有誤刪。\n"},
+		{GroupElsewhere, "📍 台中以外、非遠端（104 推薦的）", ""},
+	}
+	for _, sec := range sections {
+		var group []store.JobRecord
+		for _, j := range left {
+			if alertGroup(j) == sec.group {
+				group = append(group, j)
+			}
+		}
+		if len(group) == 0 {
+			continue
+		}
+		fmt.Fprintf(b, "\n<b>%s：%d 筆</b>\n%s", sec.title, len(group), sec.hint)
+		for _, j := range group {
+			fmt.Fprintf(b, "<a href=\"%s\">%s</a>｜%s｜%s\n", html.EscapeString(j.URL), html.EscapeString(j.Title),
+				html.EscapeString(j.Board), html.EscapeString(reasonText(j.Reason)))
+		}
+	}
 }
 
 // contactOrder puts what needs a reply first.
