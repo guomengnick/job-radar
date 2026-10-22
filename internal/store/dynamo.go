@@ -28,6 +28,7 @@ type Dynamo struct {
 // check the requests it sends without an AWS account.
 type DynamoAPI interface {
 	dynamodb.QueryAPIClient
+	GetItem(context.Context, *dynamodb.GetItemInput, ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error)
 	PutItem(context.Context, *dynamodb.PutItemInput, ...func(*dynamodb.Options)) (*dynamodb.PutItemOutput, error)
 	UpdateItem(context.Context, *dynamodb.UpdateItemInput, ...func(*dynamodb.Options)) (*dynamodb.UpdateItemOutput, error)
 	BatchWriteItem(context.Context, *dynamodb.BatchWriteItemInput, ...func(*dynamodb.Options)) (*dynamodb.BatchWriteItemOutput, error)
@@ -254,6 +255,74 @@ func (d *Dynamo) SaveAssessment(ctx context.Context, a Assessment) error {
 	_, err = d.db.PutItem(ctx, &dynamodb.PutItemInput{TableName: &d.jobs, Item: item})
 	if err != nil {
 		return fmt.Errorf("save assessment: %w", err)
+	}
+	return nil
+}
+
+func (d *Dynamo) AssessmentOf(ctx context.Context, key string) (Assessment, bool, error) {
+	out, err := d.db.GetItem(ctx, &dynamodb.GetItemInput{
+		TableName: &d.jobs,
+		Key:       map[string]types.AttributeValue{"key": &types.AttributeValueMemberS{Value: key}},
+	})
+	if err != nil {
+		return Assessment{}, false, fmt.Errorf("get assessment: %w", err)
+	}
+	if out.Item == nil {
+		return Assessment{}, false, nil
+	}
+	var a Assessment
+	err = attributevalue.UnmarshalMap(out.Item, &a)
+	return a, err == nil, err
+}
+
+// SaveBatch puts the batch in the jobs table under its own key prefix. It
+// has no ats, so the source index never lists it.
+func (d *Dynamo) SaveBatch(ctx context.Context, b Batch) error {
+	item, err := attributevalue.MarshalMap(b)
+	if err != nil {
+		return err
+	}
+	if _, err := d.db.PutItem(ctx, &dynamodb.PutItemInput{TableName: &d.jobs, Item: item}); err != nil {
+		return fmt.Errorf("save batch: %w", err)
+	}
+	return nil
+}
+
+func (d *Dynamo) OpenBatches(ctx context.Context) ([]Batch, error) {
+	p := dynamodb.NewQueryPaginator(d.db, &dynamodb.QueryInput{
+		TableName:                 &d.jobs,
+		IndexName:                 aws.String(pendingIndex),
+		KeyConditionExpression:    aws.String("pending = :b"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{":b": &types.AttributeValueMemberS{Value: BatchPending}},
+	})
+	var out []Batch
+	for p.HasMorePages() {
+		page, err := p.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("open batches: %w", err)
+		}
+		var bs []Batch
+		if err := attributevalue.UnmarshalListOfMaps(page.Items, &bs); err != nil {
+			return nil, err
+		}
+		out = append(out, bs...)
+	}
+	return out, nil
+}
+
+func (d *Dynamo) CloseBatch(ctx context.Context, key string, at time.Time) error {
+	ts, err := attributevalue.Marshal(at)
+	if err != nil {
+		return err
+	}
+	_, err = d.db.UpdateItem(ctx, &dynamodb.UpdateItemInput{
+		TableName:                 &d.jobs,
+		Key:                       map[string]types.AttributeValue{"key": &types.AttributeValueMemberS{Value: key}},
+		UpdateExpression:          aws.String("SET closed_at = :t REMOVE pending"),
+		ExpressionAttributeValues: map[string]types.AttributeValue{":t": ts},
+	})
+	if err != nil {
+		return fmt.Errorf("close batch %s: %w", key, err)
 	}
 	return nil
 }
