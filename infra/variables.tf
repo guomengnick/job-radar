@@ -32,6 +32,12 @@ variable "assess_profile_param" {
   default     = "/job-radar/assess-profile"
 }
 
+variable "batch_rules_param" {
+  description = "SSM String holding the batch button's cheap rules as JSON (created by Terraform, then edited by hand)."
+  type        = string
+  default     = "/job-radar/batch-rules"
+}
+
 variable "clip_secret_param" {
   description = "SSM SecureString holding the shared secret the browser extension sends in x-radar-secret."
   type        = string

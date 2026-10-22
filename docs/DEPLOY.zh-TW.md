@@ -98,6 +98,24 @@ aws ssm put-parameter --region ap-southeast-2 --name /job-radar/assess-profile -
 
 部署後照 `extension/README.md` 安裝擴充功能。
 
+### 批次送出的規則（改了不用重新部署）
+
+「批次送到雷達」送出的頁面，先經過 `/job-radar/batch-rules` 這組規則，被排除的不送 AI，但總表會列出來。Terraform 第一次部署時會建立它，之後由你手動改，Terraform 不會蓋回去。看目前的值：
+
+```bash
+aws ssm get-parameter --region ap-southeast-2 --name /job-radar/batch-rules --query Parameter.Value --output text
+```
+
+改成新的值（整組覆蓋；欄位名稱打錯會讓下一批直接失敗，不會悄悄失效）：
+
+```bash
+aws ssm put-parameter --region ap-southeast-2 --name /job-radar/batch-rules --type String --overwrite --value '{"exclude_title_words":["現場工程師","業務","韌體"],"exclude_location_words":["后里"],"min_annual_salary":0,"min_monthly_top_pay":0}'
+```
+
+- `exclude_title_words`：職稱（分頁標題第一個「｜」之前）含這些字就排除。
+- `exclude_location_words`：頁面「上班地點」那一行含這些字就排除。
+- `min_annual_salary`、`min_monthly_top_pay`：頁面「工作待遇」低於這個就排除；0 表示不檢查薪資。
+
 ## 4. 建立放 Terraform state 的 bucket（只做一次）
 
 ```bash
