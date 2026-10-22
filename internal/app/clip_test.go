@@ -51,6 +51,7 @@ func TestClip(t *testing.T) {
 		"依據：「自家 SaaS」「C# 與 PostgreSQL」",
 		"📄 履歷用 C 版，加 ML 那條",
 		"<code>這個職缺需要 C# 後端，跟我的經驗直接相關。</code>",
+		"💰 輸入 3000｜快取讀 0｜快取寫 0｜輸出 400 token，約 US$0.020",
 	} {
 		if !strings.Contains(out.String(), want) {
 			t.Errorf("reply missing %q:\n%s", want, out.String())
