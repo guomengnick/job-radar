@@ -137,6 +137,25 @@ func (m *Memory) PendingJobs(_ context.Context) ([]JobRecord, error) {
 	return out, nil
 }
 
+func (m *Memory) JobsSince(_ context.Context, ats string, since time.Time) ([]JobRecord, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var out []JobRecord
+	for _, j := range m.data.Jobs {
+		if j.ATS == ats && !j.FirstSeen.Before(since) {
+			out = append(out, j)
+		}
+	}
+	// Jobs from one alert share a time; the key keeps their order fixed.
+	sort.Slice(out, func(i, k int) bool {
+		if !out[i].FirstSeen.Equal(out[k].FirstSeen) {
+			return out[i].FirstSeen.Before(out[k].FirstSeen)
+		}
+		return out[i].Key < out[k].Key
+	})
+	return out, nil
+}
+
 func (m *Memory) MarkNotified(_ context.Context, keys []string, at time.Time) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
