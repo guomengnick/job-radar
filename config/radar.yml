@@ -202,7 +202,11 @@ boards:
     ashby: [supabase, foxglove, applied]
 
 # 送到雷達: a job page sent from the browser extension is judged by this model
-# against the user's private profile (an SSM parameter, not in this repo).
-# One call per click; Sonnet for the full-text judgement.
+# against the user's private profile (an SSM parameter, not in this repo):
+# one call per page, or a Message Batch at half price for the batch button.
 assess:
-  model: claude-sonnet-5-5
+  # The user's choice (2026-10-22): the best model. Opus 5.5 always thinks
+  # before it answers, billed as output; effort sets how much. medium is the
+  # model's default; the batch summary shows what each batch cost.
+  model: claude-opus-5-5
+  effort: medium

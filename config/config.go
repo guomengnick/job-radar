@@ -29,6 +29,9 @@ type Config struct {
 // AssessRules configure the model that judges a page sent from the browser.
 type AssessRules struct {
 	Model string `yaml:"model"`
+	// Effort is how hard the model thinks: low, medium, high, xhigh or max;
+	// empty leaves the model's default.
+	Effort string `yaml:"effort"`
 }
 
 type SpringboardRules struct {
@@ -133,6 +136,11 @@ func (c *Config) validate() error {
 	}
 	if c.Assess.Model == "" {
 		return fmt.Errorf("config: assess.model must be set")
+	}
+	switch c.Assess.Effort {
+	case "", "low", "medium", "high", "xhigh", "max":
+	default:
+		return fmt.Errorf("config: assess.effort %q is not low, medium, high, xhigh or max", c.Assess.Effort)
 	}
 	return nil
 }
