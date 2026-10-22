@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <title>送到雷達</title>
+  <style>
+    body { font: 13px system-ui, sans-serif; margin: 12px; width: 300px; color: #212121; }
+    h2 { font-size: 13px; margin: 0 0 8px; }
+    button { width: 100%; padding: 8px; font-size: 13px; cursor: pointer; }
+    button:disabled { cursor: default; }
+    hr { border: none; border-top: 1px solid #e0e0e0; margin: 12px 0; }
+    .hint { color: #616161; margin: 4px 0 0; }
+    .group { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
+    .group span { margin-left: auto; color: #616161; }
+    #groups { margin: 8px 0; }
+    #status { color: #616161; min-height: 1em; margin: 8px 0 0; }
+    #status.error { color: #c62828; }
+    a { color: #1565c0; }
+  </style>
+</head>
+<body>
+  <button id="clip">送出這一頁評分</button>
+  <p class="hint">結果用 Telegram 回覆，圖示上會顯示分數。</p>
+  <hr>
+  <h2>開啟 104 配對信的職缺</h2>
+  <label>從 <input type="date" id="day"> 起第一次出現的</label>
+  <div id="groups"></div>
+  <button id="open" disabled>開啟</button>
+  <p id="status"></p>
+  <p class="hint"><a href="#" id="settings">設定</a></p>
+  <script src="popup.js"></script>
+</body>
+</html>
