@@ -9,8 +9,10 @@ locals {
       digest = { timeout = 60, memory = 256, retries = 0 }
       sync   = { timeout = 300, memory = 256, retries = 0 }
       # Called by the browser extension and answered synchronously; one model
-      # call takes 10–40 seconds.
+      # call takes 10–60 seconds, submitting a batch a few.
       clip = { timeout = 120, memory = 256, retries = 0 }
+      # Every ten minutes: sends the summary of each batch that has ended.
+      batch = { timeout = 120, memory = 256, retries = 0 }
     },
     # ingest exists only when mail receiving is configured (mail.tf).
     { for d in keys(local.mail) : "ingest" => { timeout = 60, memory = 256, retries = 2 } },
@@ -30,7 +32,10 @@ locals {
       ANTHROPIC_KEY_PARAM  = var.anthropic_key_param
       ASSESS_PROFILE_PARAM = var.assess_profile_param
       CLIP_SECRET_PARAM    = var.clip_secret_param
+      BATCH_RULES_PARAM    = var.batch_rules_param
+      PAGES_BUCKET         = aws_s3_bucket.pages.bucket
     })
+    batch = merge(local.telegram_env, { ANTHROPIC_KEY_PARAM = var.anthropic_key_param })
   }
 }
 

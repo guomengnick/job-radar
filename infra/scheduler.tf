@@ -40,6 +40,8 @@ locals {
       cron = "cron(0 7 ? * SUN *)", fn = "sync", input = { task = "sync-boards", ats = a }
     } },
     { digest = { cron = "cron(40 8 * * ? *)", fn = "digest", input = { task = "digest" } } },
+    # A run with no open batch reads one index query and stops.
+    { batch-check = { cron = "rate(10 minutes)", fn = "batch", input = { task = "batch-check" } } },
   )
 }
 

@@ -55,7 +55,7 @@ EventBridge Scheduler（Asia/Taipei）
 | 表 | 主鍵 | 重點 |
 |---|---|---|
 | boards | `ats` + `slug` | status（unknown／ok／failing／dead）、consecutive_404、last_checked_at、last_ok_at |
-| jobs | `key` = `ats#slug#id` | 只存通過職稱篩選的職缺。寫入條件是 `attribute_not_exists`。另有稀疏索引 `pending-index`：只有待通知的職缺帶有 `pending` 欄位；索引 `source-index`（`ats`、`first_seen`）依來源和時間列出所有職缺，擴充功能用它列出某天起的 104 職缺，日報用它列出被規則排除的 |
+| jobs | `key` = `ats#slug#id` | 只存通過職稱篩選的職缺。寫入條件是 `attribute_not_exists`。另有稀疏索引 `pending-index`：只有待通知的職缺帶有 `pending` 欄位；索引 `source-index`（`ats`、`first_seen`）依來源和時間列出所有職缺，擴充功能用它列出某天起的 104 職缺，日報用它列出被規則排除的。同一張表也存評分結果（`assess#…`）和批次（`batch#…`，等待總表時 `pending` 為 `batch`，batch 函式每 10 分鐘從 `pending-index` 找出來） |
 | runs | `pk="run"` + `sk=開始時間#ats#task` | 各種結果的計數、新增數、待通知數、狀態；`expires_at` 到期自動刪除 |
 
 ## 5. 篩選規則（`config/radar.yml`，移植自 career-ops）

@@ -35,13 +35,22 @@ locals {
     sync = [
       { actions = ["dynamodb:Query", "dynamodb:BatchWriteItem"], resources = [aws_dynamodb_table.boards.arn] },
     ]
-    # Read its four parameters; store the judgement (assess# items); list
-    # the 104 jobs for the extension.
+    # Read its five parameters; store judgements (assess# items) and
+    # batches, and look up an earlier judgement; list the 104 jobs for the
+    # extension; archive a batch's pages.
     clip = [
-      { actions = ["ssm:GetParameter"], resources = [for p in [var.anthropic_key_param, var.assess_profile_param, var.clip_secret_param, var.telegram_token_param] :
+      { actions = ["ssm:GetParameter"], resources = [for p in [var.anthropic_key_param, var.assess_profile_param, var.clip_secret_param, var.telegram_token_param, var.batch_rules_param] :
       "arn:aws:ssm:${var.region}:${data.aws_caller_identity.me.account_id}:parameter${p}"] },
-      { actions = ["dynamodb:PutItem"], resources = [aws_dynamodb_table.jobs.arn] },
+      { actions = ["dynamodb:PutItem", "dynamodb:GetItem"], resources = [aws_dynamodb_table.jobs.arn] },
       { actions = ["dynamodb:Query"], resources = ["${aws_dynamodb_table.jobs.arn}/index/source-index"] },
+      { actions = ["s3:PutObject"], resources = ["${aws_s3_bucket.pages.arn}/batches/*"] },
+    ]
+    # Find open batches; store their judgements and close them.
+    batch = [
+      { actions = ["ssm:GetParameter"], resources = [for p in [var.anthropic_key_param, var.telegram_token_param] :
+      "arn:aws:ssm:${var.region}:${data.aws_caller_identity.me.account_id}:parameter${p}"] },
+      { actions = ["dynamodb:Query"], resources = ["${aws_dynamodb_table.jobs.arn}/index/pending-index"] },
+      { actions = ["dynamodb:PutItem", "dynamodb:UpdateItem"], resources = [aws_dynamodb_table.jobs.arn] },
     ]
     # Read stored mail; insert 104 alert jobs (conditional puts) and the run
     # record. No reads, updates or deletes on either table.
