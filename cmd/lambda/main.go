@@ -7,10 +7,15 @@
 //
 // ingest is invoked by S3 when SES stores a message, and clip through its
 // function URL by the 送到雷達 browser extension: POST / judges a page,
-// GET /jobs lists the 104 alert jobs for the extension to open.
+// GET /jobs lists the 104 alert jobs for the extension to open, and
+// POST /batch sends the open tabs as one Message Batch. The scheduler runs
+// batch every ten minutes to send the summary of each batch that has ended:
+//
+//	{"task":"batch-check"}
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/subtle"
 	"encoding/base64"
@@ -115,6 +120,8 @@ func (h *handler) handle(ctx context.Context, raw json.RawMessage) (any, error) 
 		expected := strings.Split(envOr("EXPECTED_ATS", "greenhouse,lever,ashby"), ",")
 		_, err = app.Digest(ctx, h.deps, n, app.DigestOptions{ExpectedATS: expected, DryRun: e.DryRun, Location: taipei})
 		return "digest sent", err
+	case "batch-check":
+		return h.checkBatches(ctx)
 	case "sync-boards":
 		added, total, err := app.SyncBoards(ctx, h.deps, e.ATS, "")
 		return fmt.Sprintf("%s: %d listed, %d new", e.ATS, total, added), err
@@ -166,8 +173,12 @@ func urlRequest(raw json.RawMessage) (events.LambdaFunctionURLRequest, bool) {
 	return r, true
 }
 
-// A page's text is tens of KB at most.
-const maxClipBytes = 256 << 10
+// A page's text is tens of KB at most. A batch of pages must stay under the
+// function URL's 6 MB request limit; the extension sends at most 5 MB.
+const (
+	maxClipBytes  = 256 << 10
+	maxBatchBytes = 5 << 20
+)
 
 type urlHandler func(context.Context, events.LambdaFunctionURLRequest) events.LambdaFunctionURLResponse
 
@@ -177,8 +188,9 @@ type urlHandler func(context.Context, events.LambdaFunctionURLRequest) events.La
 // full and answered with a status only.
 func (h *handler) serve(ctx context.Context, r events.LambdaFunctionURLRequest) events.LambdaFunctionURLResponse {
 	routes := map[string]map[string]urlHandler{
-		"/":     {http.MethodPost: h.clip},
-		"/jobs": {http.MethodGet: h.jobs},
+		"/":      {http.MethodPost: h.clip},
+		"/jobs":  {http.MethodGet: h.jobs},
+		"/batch": {http.MethodPost: h.batch},
 	}
 	path := r.RawPath
 	if path == "" {
@@ -230,29 +242,21 @@ func (h *handler) jobs(ctx context.Context, r events.LambdaFunctionURLRequest) e
 
 // clip judges the page in the body and replies on Telegram.
 func (h *handler) clip(ctx context.Context, r events.LambdaFunctionURLRequest) events.LambdaFunctionURLResponse {
-	var err error
-	body := []byte(r.Body)
-	if r.IsBase64Encoded {
-		if body, err = base64.StdEncoding.DecodeString(r.Body); err != nil {
-			return reply(http.StatusBadRequest, "bad body")
-		}
-	}
-	if len(body) > maxClipBytes {
-		return reply(http.StatusRequestEntityTooLarge, "page too large")
+	body, status := requestBody(r, maxClipBytes)
+	if status != 0 {
+		return reply(status, http.StatusText(status))
 	}
 	var page assess.Page
 	if err := json.Unmarshal(body, &page); err != nil {
 		return reply(http.StatusBadRequest, "bad json")
 	}
 
-	var vals [3]string
-	for i, env := range []string{"ANTHROPIC_KEY_PARAM", "ASSESS_PROFILE_PARAM", "TELEGRAM_TOKEN_PARAM"} {
-		if vals[i], err = h.secret(ctx, mustEnv(env)); err != nil {
-			h.log.Error("clip parameter", "err", err)
-			return reply(http.StatusInternalServerError, "server error")
-		}
+	vals, err := h.params(ctx, "ANTHROPIC_KEY_PARAM", "ASSESS_PROFILE_PARAM", "TELEGRAM_TOKEN_PARAM")
+	if err != nil {
+		h.log.Error("clip parameter", "err", err)
+		return reply(http.StatusInternalServerError, "server error")
 	}
-	model := assess.Client{APIKey: vals[0], Model: h.deps.Cfg.Assess.Model}
+	model := h.model(vals[0])
 	n := notify.Telegram{Token: vals[2], ChatID: mustEnv("TELEGRAM_CHAT_ID")}
 	j, err := app.Clip(ctx, h.deps, model, n, vals[1], page)
 	switch {
@@ -265,6 +269,108 @@ func (h *handler) clip(ctx context.Context, r events.LambdaFunctionURLRequest) e
 	out, _ := json.Marshal(map[string]any{"score": j.Score, "verdict": j.Verdict})
 	return events.LambdaFunctionURLResponse{StatusCode: http.StatusOK, Body: string(out),
 		Headers: map[string]string{"content-type": "application/json"}}
+}
+
+// batch takes the pages the extension read from the open tabs, submits
+// them as one Message Batch and answers at once with what it did.
+func (h *handler) batch(ctx context.Context, r events.LambdaFunctionURLRequest) events.LambdaFunctionURLResponse {
+	body, status := requestBody(r, maxBatchBytes)
+	if status != 0 {
+		return reply(status, http.StatusText(status))
+	}
+	var req struct {
+		Pages []assess.Page `json:"pages"`
+	}
+	if err := json.Unmarshal(body, &req); err != nil || len(req.Pages) == 0 {
+		return reply(http.StatusBadRequest, "want {\"pages\": [...]}")
+	}
+	vals, err := h.params(ctx, "ANTHROPIC_KEY_PARAM", "ASSESS_PROFILE_PARAM", "TELEGRAM_TOKEN_PARAM", "BATCH_RULES_PARAM")
+	if err != nil {
+		h.log.Error("batch parameter", "err", err)
+		return reply(http.StatusInternalServerError, "server error")
+	}
+	rules, err := app.ParsePageRules(vals[3])
+	if err != nil {
+		h.log.Error("batch rules", "err", err)
+		return reply(http.StatusInternalServerError, "batch rules are not valid JSON")
+	}
+	n := notify.Telegram{Token: vals[2], ChatID: mustEnv("TELEGRAM_CHAT_ID")}
+	archive := s3Archive{client: h.s3, bucket: mustEnv("PAGES_BUCKET")}
+	receipt, err := app.SubmitPages(ctx, h.deps, h.model(vals[0]), n, archive, rules, vals[1], req.Pages)
+	if err != nil {
+		h.log.Error("batch", "err", err)
+		return reply(http.StatusBadGateway, "batch failed")
+	}
+	out, _ := json.Marshal(receipt)
+	return events.LambdaFunctionURLResponse{StatusCode: http.StatusAccepted, Body: string(out),
+		Headers: map[string]string{"content-type": "application/json"}}
+}
+
+// checkBatches sends the summary of each open batch that has ended. Most
+// runs find none and read no secret.
+func (h *handler) checkBatches(ctx context.Context) (string, error) {
+	open, err := h.deps.Store.OpenBatches(ctx)
+	if err != nil || len(open) == 0 {
+		return "no open batches", err
+	}
+	vals, err := h.params(ctx, "ANTHROPIC_KEY_PARAM", "TELEGRAM_TOKEN_PARAM")
+	if err != nil {
+		return "", err
+	}
+	n := notify.Telegram{Token: vals[1], ChatID: mustEnv("TELEGRAM_CHAT_ID")}
+	closed, err := app.CheckBatches(ctx, h.deps, h.model(vals[0]), n, open)
+	return fmt.Sprintf("batches: %d open, %d closed", len(open), closed), err
+}
+
+func (h *handler) model(apiKey string) assess.Client {
+	return assess.Client{APIKey: apiKey, Model: h.deps.Cfg.Assess.Model, Effort: h.deps.Cfg.Assess.Effort}
+}
+
+// params reads the parameters named by the given environment variables.
+func (h *handler) params(ctx context.Context, envs ...string) ([]string, error) {
+	vals := make([]string, len(envs))
+	for i, env := range envs {
+		v, err := h.secret(ctx, mustEnv(env))
+		if err != nil {
+			return nil, err
+		}
+		vals[i] = v
+	}
+	return vals, nil
+}
+
+// requestBody returns the decoded body, or the status to answer with.
+func requestBody(r events.LambdaFunctionURLRequest, limit int) ([]byte, int) {
+	body := []byte(r.Body)
+	if r.IsBase64Encoded {
+		var err error
+		if body, err = base64.StdEncoding.DecodeString(r.Body); err != nil {
+			return nil, http.StatusBadRequest
+		}
+	}
+	if len(body) > limit {
+		return nil, http.StatusRequestEntityTooLarge
+	}
+	return body, 0
+}
+
+// s3Archive keeps each batch's pages as one JSON object under batches/.
+// The bucket expires objects after 30 days (infra/pages.tf).
+type s3Archive struct {
+	client *s3.Client
+	bucket string
+}
+
+func (a s3Archive) SavePages(ctx context.Context, name string, pages []assess.Page) error {
+	body, err := json.Marshal(pages)
+	if err != nil {
+		return err
+	}
+	key := "batches/" + name
+	_, err = a.client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket: &a.bucket, Key: &key, Body: bytes.NewReader(body), ContentType: ptr("application/json"),
+	})
+	return err
 }
 
 func reply(status int, msg string) events.LambdaFunctionURLResponse {
