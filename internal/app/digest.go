@@ -247,9 +247,14 @@ var reasons = map[string]string{
 	"taiwan_city_unclear":           "台灣職缺，城市需確認",
 	"taichung_onsite_manual_review": "台中到班，只在待遇與契合度特別好時考慮",
 	"taichung_hybrid_manual_review": "台中混合辦公，需人工判斷",
+	"outside_taichung":              "台中以外、非遠端",
+	"salary_below_floor":            "薪資低於門檻",
 }
 
 func reasonText(r string) string {
+	if w, ok := strings.CutPrefix(r, "title_excluded:"); ok {
+		return "職稱含「" + w + "」"
+	}
 	if t, ok := reasons[r]; ok {
 		return t
 	}
