@@ -96,6 +96,11 @@ func TestServeGate(t *testing.T) {
 		{"too large", req("/ POST", "right-secret", strings.Repeat("x", maxClipBytes+1), false), http.StatusRequestEntityTooLarge},
 		{"bad base64", req("/ POST", "right-secret", "%%%", true), http.StatusBadRequest},
 		{"bad json", req("/ POST", "right-secret", "{", false), http.StatusBadRequest},
+		{"GET the batch", req("/batch GET", "right-secret", "", false), http.StatusMethodNotAllowed},
+		{"batch without secret", req("/batch POST", "", `{"pages":[]}`, false), http.StatusUnauthorized},
+		{"batch too large", req("/batch POST", "right-secret", strings.Repeat("x", maxBatchBytes+1), false), http.StatusRequestEntityTooLarge},
+		{"batch with no pages", req("/batch POST", "right-secret", `{"pages":[]}`, false), http.StatusBadRequest},
+		{"batch not JSON", req("/batch POST", "right-secret", `[`, false), http.StatusBadRequest},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -151,5 +156,16 @@ func TestJobsList(t *testing.T) {
 		if resp := get(since); resp.StatusCode != http.StatusBadRequest {
 			t.Errorf("since %q: status %d, want 400", since, resp.StatusCode)
 		}
+	}
+}
+
+func TestCheckBatchesReadsNoSecretWhenIdle(t *testing.T) {
+	h := &handler{deps: app.Deps{Store: store.NewMemory()},
+		secret: func(context.Context, string) (string, error) {
+			t.Error("no open batch: no secret is read")
+			return "", nil
+		}}
+	if out, err := h.handle(context.Background(), json.RawMessage(`{"task":"batch-check"}`)); err != nil || out != "no open batches" {
+		t.Fatalf("out=%v err=%v", out, err)
 	}
 }
