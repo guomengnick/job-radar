@@ -1,5 +1,7 @@
 package assess
 
+import "github.com/anthropics/anthropic-sdk-go"
+
 // The rubric. The user's own facts and preferences live in the profile,
 // which is private (an SSM parameter), so this file holds no personal data.
 const instructions = `你是使用者的求職助理。依 <profile> 裡的背景與偏好，評估使用者送來的一份職缺。你的回覆必須是呼叫一次 record_assessment 工具，不要輸出其他文字。所有欄位用繁體中文。
@@ -26,12 +28,14 @@ verdict：75 以上「建議投」，55–74「可考慮」，其他「不建議
 
 const toolName = "record_assessment"
 
-var tool = map[string]any{
-	"name":        toolName,
-	"description": "回報這份職缺的評估結果。",
-	"input_schema": map[string]any{
-		"type": "object",
-		"properties": map[string]any{
+// The tool's input is the Assessment. The schema keeps the reply's shape
+// fixed; clean still checks every value, since a schema is advice to the
+// model, not a guarantee.
+var tool = anthropic.ToolUnionParam{OfTool: &anthropic.ToolParam{
+	Name:        toolName,
+	Description: anthropic.String("回報這份職缺的評估結果。"),
+	InputSchema: anthropic.ToolInputSchemaParam{
+		Properties: map[string]any{
 			"job_title":     map[string]any{"type": "string"},
 			"company":       map[string]any{"type": "string"},
 			"score":         map[string]any{"type": "integer", "minimum": 0, "maximum": 100},
@@ -47,7 +51,7 @@ var tool = map[string]any{
 			"letter_line":   map[string]any{"type": "string"},
 			"reason":        map[string]any{"type": "string"},
 		},
-		"required": []string{"job_title", "company", "score", "verdict", "direction_fit", "skills_fit",
+		Required: []string{"job_title", "company", "score", "verdict", "direction_fit", "skills_fit",
 			"company_type", "salary", "red_flags", "evidence", "resume", "add_ml_line", "letter_line", "reason"},
 	},
-}
+}}

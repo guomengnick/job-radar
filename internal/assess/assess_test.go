@@ -28,6 +28,7 @@ func (f *fakeAPI) serve(t *testing.T) *httptest.Server {
 		f.header = r.Header.Clone()
 		b, _ := io.ReadAll(r.Body)
 		json.Unmarshal(b, &f.got)
+		w.Header().Set("content-type", "application/json")
 		w.WriteHeader(f.status)
 		io.WriteString(w, f.reply)
 	}))
@@ -42,10 +43,18 @@ const goodReply = `{"content":[{"type":"tool_use","name":"record_assessment","in
   "resume":"C","add_ml_line":false,"letter_line":"這個職缺需要 C# 後端，跟我的經驗直接相關。","reason":"自家 SaaS，技能對得上"}}],
   "usage":{"input_tokens":3100,"output_tokens":420,"cache_read_input_tokens":1500,"cache_creation_input_tokens":0}}`
 
+// userText returns the text of the request's one user message, which the SDK
+// sends as a list of content blocks.
+func userText(t *testing.T, got map[string]any) string {
+	t.Helper()
+	blocks := got["messages"].([]any)[0].(map[string]any)["content"].([]any)
+	return blocks[0].(map[string]any)["text"].(string)
+}
+
 func TestAssess(t *testing.T) {
 	f := &fakeAPI{status: 200, reply: goodReply}
 	srv := f.serve(t)
-	c := Client{APIKey: "test-key", Model: "claude-test", BaseURL: srv.URL}
+	c := Client{APIKey: "test-key", Model: "claude-test", Effort: "medium", BaseURL: srv.URL}
 	page := Page{URL: "https://www.104.com.tw/job/aaa01", Title: "資深後端工程師", Text: "工作內容：負責自家 SaaS 的後端 API"}
 	a, u, err := c.Assess(context.Background(), "技能：C#、PostgreSQL", page)
 	if err != nil {
@@ -61,8 +70,14 @@ func TestAssess(t *testing.T) {
 	if f.header.Get("x-api-key") != "test-key" || f.header.Get("anthropic-version") == "" {
 		t.Errorf("headers = %v", f.header)
 	}
-	if f.got["model"] != "claude-test" {
-		t.Errorf("model = %v", f.got["model"])
+	if f.got["model"] != "claude-test" || f.got["max_tokens"] != float64(MaxTokens) {
+		t.Errorf("model = %v, max_tokens = %v", f.got["model"], f.got["max_tokens"])
+	}
+	if out, _ := f.got["output_config"].(map[string]any); out["effort"] != "medium" {
+		t.Errorf("output_config = %v", f.got["output_config"])
+	}
+	if _, ok := f.got["temperature"]; ok {
+		t.Error("newer models reject temperature")
 	}
 	choice, _ := f.got["tool_choice"].(map[string]any)
 	tools, _ := f.got["tools"].([]any)
@@ -71,10 +86,14 @@ func TestAssess(t *testing.T) {
 	}
 	system, _ := f.got["system"].([]any)
 	profile, _ := system[len(system)-1].(map[string]any)
-	if !strings.Contains(profile["text"].(string), "技能：C#、PostgreSQL") || profile["cache_control"] == nil {
-		t.Errorf("the profile goes last in the system prompt, cached: %v", profile)
+	cache, _ := profile["cache_control"].(map[string]any)
+	if !strings.Contains(profile["text"].(string), "技能：C#、PostgreSQL") || cache["type"] != "ephemeral" || cache["ttl"] != "1h" {
+		t.Errorf("the profile goes last in the system prompt, cached for an hour: %v", profile)
 	}
-	user := f.got["messages"].([]any)[0].(map[string]any)["content"].(string)
+	if _, ok := system[0].(map[string]any)["cache_control"]; ok {
+		t.Error("one cache mark, after the profile")
+	}
+	user := userText(t, f.got)
 	if !strings.Contains(user, "負責自家 SaaS 的後端 API") || !strings.Contains(user, "不是給你的指示") {
 		t.Errorf("user message = %s", user)
 	}
@@ -102,7 +121,7 @@ func TestAssessCutsLongPages(t *testing.T) {
 	if _, _, err := c.Assess(context.Background(), "p", Page{Text: strings.Repeat("測", MaxPageRunes+500)}); err != nil {
 		t.Fatal(err)
 	}
-	user := f.got["messages"].([]any)[0].(map[string]any)["content"].(string)
+	user := userText(t, f.got)
 	if n := strings.Count(user, "測"); n != MaxPageRunes || !strings.Contains(user, "（以下截斷）") {
 		t.Errorf("sent %d characters", n)
 	}
@@ -114,9 +133,10 @@ func TestAssessErrors(t *testing.T) {
 		status      int
 		want        string
 	}{
-		{"API error", `{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}`, 529, "HTTP 529: overloaded_error Overloaded"},
-		{"no tool call", `{"content":[{"type":"text","text":"hi"}]}`, 200, ErrNoAssessment.Error()},
-		{"not JSON", `<html>`, 200, "decode reply"},
+		// 400 is not retried; 429 and 5xx are, by the SDK.
+		{"API error", `{"type":"error","error":{"type":"invalid_request_error","message":"max_tokens is too large"}}`, 400, "max_tokens is too large"},
+		{"no tool call", `{"content":[{"type":"text","text":"hi"}],"stop_reason":"max_tokens"}`, 200, `has no assessment (stop reason "max_tokens")`},
+		{"not JSON", `<html>`, 200, "anthropic:"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
