@@ -34,6 +34,10 @@ resource "aws_dynamodb_table" "jobs" {
     name = "first_seen"
     type = "S"
   }
+  attribute {
+    name = "ats"
+    type = "S"
+  }
 
   # Sparse index: only unsent jobs carry "pending", so the digest reads just those.
   global_secondary_index {
@@ -42,6 +46,23 @@ resource "aws_dynamodb_table" "jobs" {
 
     key_schema {
       attribute_name = "pending"
+      key_type       = "HASH"
+    }
+    key_schema {
+      attribute_name = "first_seen"
+      key_type       = "RANGE"
+    }
+  }
+
+  # Every job by source and first-seen time, whatever its state: the
+  # extension lists a day's 104 jobs from it, and the digest the ones it left
+  # out. Assessments carry no "ats", so they stay out.
+  global_secondary_index {
+    name            = "source-index"
+    projection_type = "ALL"
+
+    key_schema {
+      attribute_name = "ats"
       key_type       = "HASH"
     }
     key_schema {
