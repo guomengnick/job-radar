@@ -6,7 +6,8 @@
 //	{"task":"sync-boards","ats":"lever"}
 //
 // ingest is invoked by S3 when SES stores a message, and clip through its
-// function URL when the 送到雷達 browser extension sends a page.
+// function URL by the 送到雷達 browser extension: POST / judges a page,
+// GET /jobs lists the 104 alert jobs for the extension to open.
 package main
 
 import (
@@ -85,7 +86,7 @@ func main() {
 // response for the function URL.
 func (h *handler) handle(ctx context.Context, raw json.RawMessage) (any, error) {
 	if req, ok := urlRequest(raw); ok {
-		return h.clip(ctx, req), nil
+		return h.serve(ctx, req), nil
 	}
 	if rec, ok := s3Records(raw); ok {
 		return h.ingest(ctx, rec)
@@ -168,12 +169,27 @@ func urlRequest(raw json.RawMessage) (events.LambdaFunctionURLRequest, bool) {
 // A page's text is tens of KB at most.
 const maxClipBytes = 256 << 10
 
-// clip serves POST from the browser extension. The function URL is public,
-// so the shared secret in the x-radar-secret header is the gate: nothing is
-// read or called before it matches. Errors are logged in full and answered
-// with a status only.
-func (h *handler) clip(ctx context.Context, r events.LambdaFunctionURLRequest) events.LambdaFunctionURLResponse {
-	if r.RequestContext.HTTP.Method != http.MethodPost {
+type urlHandler func(context.Context, events.LambdaFunctionURLRequest) events.LambdaFunctionURLResponse
+
+// serve answers the browser extension. The function URL is public, so the
+// shared secret in the x-radar-secret header is the gate: past the route
+// check, nothing is read or called before it matches. Errors are logged in
+// full and answered with a status only.
+func (h *handler) serve(ctx context.Context, r events.LambdaFunctionURLRequest) events.LambdaFunctionURLResponse {
+	routes := map[string]map[string]urlHandler{
+		"/":     {http.MethodPost: h.clip},
+		"/jobs": {http.MethodGet: h.jobs},
+	}
+	path := r.RawPath
+	if path == "" {
+		path = "/"
+	}
+	methods, ok := routes[path]
+	if !ok {
+		return reply(http.StatusNotFound, "not found")
+	}
+	next, ok := methods[r.RequestContext.HTTP.Method]
+	if !ok {
 		return reply(http.StatusMethodNotAllowed, "method not allowed")
 	}
 	want, err := h.secret(ctx, mustEnv("CLIP_SECRET_PARAM"))
@@ -182,9 +198,39 @@ func (h *handler) clip(ctx context.Context, r events.LambdaFunctionURLRequest) e
 		return reply(http.StatusInternalServerError, "server error")
 	}
 	if got := header(r.Headers, "x-radar-secret"); want == "" || subtle.ConstantTimeCompare([]byte(got), []byte(want)) != 1 {
-		h.log.Warn("clip refused", "source_ip", r.RequestContext.HTTP.SourceIP)
+		h.log.Warn("clip refused", "path", path, "source_ip", r.RequestContext.HTTP.SourceIP)
 		return reply(http.StatusUnauthorized, "unauthorized")
 	}
+	return next(ctx, r)
+}
+
+// jobs lists the 104 alert jobs first seen since the time in the since
+// query parameter (RFC 3339), or in the last day without one.
+func (h *handler) jobs(ctx context.Context, r events.LambdaFunctionURLRequest) events.LambdaFunctionURLResponse {
+	since := h.deps.Now().Add(-24 * time.Hour)
+	if v := r.QueryStringParameters["since"]; v != "" {
+		t, err := time.Parse(time.RFC3339, v)
+		if err != nil {
+			return reply(http.StatusBadRequest, "since must be an RFC 3339 time")
+		}
+		since = t
+	}
+	jobs, err := app.ListAlertJobs(ctx, h.deps, since)
+	switch {
+	case errors.Is(err, app.ErrBadSince):
+		return reply(http.StatusBadRequest, err.Error())
+	case err != nil:
+		h.log.Error("list jobs", "err", err)
+		return reply(http.StatusInternalServerError, "server error")
+	}
+	out, _ := json.Marshal(map[string]any{"since": since.UTC().Format(time.RFC3339), "jobs": jobs})
+	return events.LambdaFunctionURLResponse{StatusCode: http.StatusOK, Body: string(out),
+		Headers: map[string]string{"content-type": "application/json"}}
+}
+
+// clip judges the page in the body and replies on Telegram.
+func (h *handler) clip(ctx context.Context, r events.LambdaFunctionURLRequest) events.LambdaFunctionURLResponse {
+	var err error
 	body := []byte(r.Body)
 	if r.IsBase64Encoded {
 		if body, err = base64.StdEncoding.DecodeString(r.Body); err != nil {

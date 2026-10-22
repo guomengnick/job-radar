@@ -9,8 +9,12 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-lambda-go/events"
+
+	"github.com/guomengnick/job-radar/internal/app"
+	"github.com/guomengnick/job-radar/internal/store"
 )
 
 func TestS3Records(t *testing.T) {
@@ -55,7 +59,7 @@ func TestURLRequest(t *testing.T) {
 	}
 }
 
-func TestClipGate(t *testing.T) {
+func TestServeGate(t *testing.T) {
 	for k, v := range map[string]string{"CLIP_SECRET_PARAM": "/test/clip-secret", "ANTHROPIC_KEY_PARAM": "/test/key",
 		"ASSESS_PROFILE_PARAM": "/test/profile", "TELEGRAM_TOKEN_PARAM": "/test/token", "TELEGRAM_CHAT_ID": "1"} {
 		t.Setenv(k, v)
@@ -70,7 +74,8 @@ func TestClipGate(t *testing.T) {
 			return "", errors.New("not allowed in this test")
 		}}
 	req := func(method, secret, body string, b64 bool) events.LambdaFunctionURLRequest {
-		r := events.LambdaFunctionURLRequest{Headers: map[string]string{}, Body: body, IsBase64Encoded: b64}
+		path, method, _ := strings.Cut(method, " ")
+		r := events.LambdaFunctionURLRequest{RawPath: path, Headers: map[string]string{}, Body: body, IsBase64Encoded: b64}
 		r.RequestContext.HTTP.Method = method
 		if secret != "" {
 			r.Headers["X-Radar-Secret"] = secret
@@ -82,17 +87,20 @@ func TestClipGate(t *testing.T) {
 		r    events.LambdaFunctionURLRequest
 		want int
 	}{
-		{"GET", req("GET", "right-secret", "", false), http.StatusMethodNotAllowed},
-		{"no secret", req("POST", "", `{}`, false), http.StatusUnauthorized},
-		{"wrong secret", req("POST", "right-secreT", `{}`, false), http.StatusUnauthorized},
-		{"too large", req("POST", "right-secret", strings.Repeat("x", maxClipBytes+1), false), http.StatusRequestEntityTooLarge},
-		{"bad base64", req("POST", "right-secret", "%%%", true), http.StatusBadRequest},
-		{"bad json", req("POST", "right-secret", "{", false), http.StatusBadRequest},
+		{"GET a page", req("/ GET", "right-secret", "", false), http.StatusMethodNotAllowed},
+		{"POST the list", req("/jobs POST", "right-secret", "", false), http.StatusMethodNotAllowed},
+		{"unknown path", req("/admin GET", "right-secret", "", false), http.StatusNotFound},
+		{"no secret", req("/ POST", "", `{}`, false), http.StatusUnauthorized},
+		{"wrong secret", req("/ POST", "right-secreT", `{}`, false), http.StatusUnauthorized},
+		{"list without secret", req("/jobs GET", "", "", false), http.StatusUnauthorized},
+		{"too large", req("/ POST", "right-secret", strings.Repeat("x", maxClipBytes+1), false), http.StatusRequestEntityTooLarge},
+		{"bad base64", req("/ POST", "right-secret", "%%%", true), http.StatusBadRequest},
+		{"bad json", req("/ POST", "right-secret", "{", false), http.StatusBadRequest},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			asked = nil
-			resp := h.clip(context.Background(), tt.r)
+			resp := h.serve(context.Background(), tt.r)
 			if resp.StatusCode != tt.want {
 				t.Errorf("status = %d, want %d (%s)", resp.StatusCode, tt.want, resp.Body)
 			}
@@ -102,5 +110,46 @@ func TestClipGate(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestJobsList(t *testing.T) {
+	t.Setenv("CLIP_SECRET_PARAM", "/test/clip-secret")
+	now := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
+	st := store.NewMemory()
+	st.InsertJobIfNew(context.Background(), store.JobRecord{Key: "104#aaa01", ATS: "104", URL: "https://www.104.com.tw/job/aaa01",
+		Title: "後端工程師", Class: "A", Reason: "taiwan_remote", State: store.JobNew, FirstSeen: now.Add(-time.Hour)})
+	h := &handler{deps: app.Deps{Store: st, Now: func() time.Time { return now }},
+		log:    slog.New(slog.NewTextHandler(io.Discard, nil)),
+		secret: func(context.Context, string) (string, error) { return "right-secret", nil }}
+	get := func(since string) events.LambdaFunctionURLResponse {
+		r := events.LambdaFunctionURLRequest{RawPath: "/jobs", Headers: map[string]string{"x-radar-secret": "right-secret"}}
+		if since != "" {
+			r.QueryStringParameters = map[string]string{"since": since}
+		}
+		r.RequestContext.HTTP.Method = http.MethodGet
+		return h.serve(context.Background(), r)
+	}
+
+	for _, since := range []string{"", "2026-10-21T16:00:00.000Z"} {
+		resp := get(since)
+		var body struct {
+			Since string          `json:"since"`
+			Jobs  []app.ListedJob `json:"jobs"`
+		}
+		if err := json.Unmarshal([]byte(resp.Body), &body); err != nil || resp.StatusCode != http.StatusOK {
+			t.Fatalf("since %q: %d %s %v", since, resp.StatusCode, resp.Body, err)
+		}
+		if len(body.Jobs) != 1 || body.Jobs[0].Group != app.GroupDigest || body.Jobs[0].Reason != "台灣遠端" {
+			t.Errorf("since %q: jobs = %+v", since, body.Jobs)
+		}
+	}
+	if resp := get("2026-10-21T16:00:00Z"); !strings.Contains(resp.Body, `"since":"2026-10-21T16:00:00Z"`) {
+		t.Errorf("the reply says which time it used: %s", resp.Body)
+	}
+	for _, since := range []string{"yesterday", "2026-09-01T00:00:00Z", "2026-10-23T00:00:00Z"} {
+		if resp := get(since); resp.StatusCode != http.StatusBadRequest {
+			t.Errorf("since %q: status %d, want 400", since, resp.StatusCode)
+		}
 	}
 }
