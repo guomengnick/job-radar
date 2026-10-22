@@ -28,21 +28,23 @@ locals {
       { actions = ["dynamodb:PutItem"], resources = [aws_dynamodb_table.jobs.arn, aws_dynamodb_table.runs.arn] },
     ]
     digest = [
-      { actions = ["dynamodb:Query"], resources = [aws_dynamodb_table.runs.arn, "${aws_dynamodb_table.jobs.arn}/index/pending-index"] },
+      { actions = ["dynamodb:Query"], resources = [aws_dynamodb_table.runs.arn, "${aws_dynamodb_table.jobs.arn}/index/pending-index", "${aws_dynamodb_table.jobs.arn}/index/source-index"] },
       { actions = ["dynamodb:UpdateItem"], resources = [aws_dynamodb_table.jobs.arn] },
       { actions = ["ssm:GetParameter"], resources = [local.param_arn] },
     ]
     sync = [
       { actions = ["dynamodb:Query", "dynamodb:BatchWriteItem"], resources = [aws_dynamodb_table.boards.arn] },
     ]
-    # Read stored mail; insert 104 alert jobs (conditional puts) and the run
-    # record. No reads, updates or deletes on either table.
-    # Read its four parameters; store the judgement (assess# items).
+    # Read its four parameters; store the judgement (assess# items); list
+    # the 104 jobs for the extension.
     clip = [
       { actions = ["ssm:GetParameter"], resources = [for p in [var.anthropic_key_param, var.assess_profile_param, var.clip_secret_param, var.telegram_token_param] :
       "arn:aws:ssm:${var.region}:${data.aws_caller_identity.me.account_id}:parameter${p}"] },
       { actions = ["dynamodb:PutItem"], resources = [aws_dynamodb_table.jobs.arn] },
+      { actions = ["dynamodb:Query"], resources = ["${aws_dynamodb_table.jobs.arn}/index/source-index"] },
     ]
+    # Read stored mail; insert 104 alert jobs (conditional puts) and the run
+    # record. No reads, updates or deletes on either table.
     ingest = [
       { actions = ["s3:GetObject"], resources = [for b in aws_s3_bucket.mail : "${b.arn}/inbound/*"] },
       { actions = ["dynamodb:PutItem"], resources = [aws_dynamodb_table.jobs.arn, aws_dynamodb_table.runs.arn] },
