@@ -13,6 +13,9 @@ locals {
       clip = { timeout = 120, memory = 256, retries = 0 }
       # Every ten minutes: sends the summary of each batch that has ended.
       batch = { timeout = 120, memory = 256, retries = 0 }
+      # Forwards each alarm from the SNS topic to Telegram. SNS invokes it
+      # asynchronously; Lambda's two retries ride out a Telegram hiccup.
+      alarm = { timeout = 30, memory = 128, retries = 2 }
     },
     # ingest exists only when mail receiving is configured (mail.tf).
     { for d in keys(local.mail) : "ingest" => { timeout = 60, memory = 256, retries = 2 } },
@@ -36,6 +39,7 @@ locals {
       PAGES_BUCKET         = aws_s3_bucket.pages.bucket
     })
     batch = merge(local.telegram_env, { ANTHROPIC_KEY_PARAM = var.anthropic_key_param })
+    alarm = local.telegram_env
   }
 }
 

@@ -156,6 +156,12 @@ make apply
 
 部署完成後，信箱會收到 SNS 的訂閱確認信，記得點確認，之後才收得到告警。
 
+告警也會由 alarm 函式轉發到 Telegram（不用確認）。要測試，把任一個告警手動設成 ALARM，Telegram 和信箱都應該收到「🚨 告警」；下一次評估時它會自己回到原本的狀態：
+
+```bash
+aws cloudwatch set-alarm-state --alarm-name job-radar-alarm-errors --state-value ALARM --state-reason "手動測試"
+```
+
 ## 6. 第一次載入看板，並建立基準線
 
 ```bash

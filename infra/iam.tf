@@ -52,6 +52,10 @@ locals {
       { actions = ["dynamodb:Query"], resources = ["${aws_dynamodb_table.jobs.arn}/index/pending-index"] },
       { actions = ["dynamodb:PutItem", "dynamodb:UpdateItem"], resources = [aws_dynamodb_table.jobs.arn] },
     ]
+    # Read the bot token, nothing else: it only forwards alarm messages.
+    alarm = [
+      { actions = ["ssm:GetParameter"], resources = [local.param_arn] },
+    ]
     # Read stored mail; insert 104 alert jobs (conditional puts) and the run
     # record. No reads, updates or deletes on either table.
     ingest = [
