@@ -118,6 +118,37 @@ func TestServeGate(t *testing.T) {
 	}
 }
 
+func TestServeVersions(t *testing.T) {
+	t.Setenv("CLIP_SECRET_PARAM", "/test/clip-secret")
+	h := &handler{log: slog.New(slog.NewTextHandler(io.Discard, nil)), commit: "3a9a26c",
+		secret: func(context.Context, string) (string, error) { return "right-secret", nil }}
+	req := func(secret, client string) events.LambdaFunctionURLRequest {
+		r := events.LambdaFunctionURLRequest{RawPath: "/batch", Headers: map[string]string{"x-radar-secret": secret}, Body: "["}
+		r.RequestContext.HTTP.Method = http.MethodPost
+		if client != "" {
+			r.Headers["x-radar-client"] = client
+		}
+		return r
+	}
+	for _, c := range []struct {
+		name, secret, client string
+		want                 int
+		names                bool // the answer carries x-radar-server
+	}{
+		{"current extension", "right-secret", minClient, http.StatusBadRequest, true},
+		{"before versions were sent", "right-secret", "", http.StatusBadRequest, true},
+		{"too old", "right-secret", "1.3.9", http.StatusUpgradeRequired, true},
+		{"no secret, no version given away", "wrong", minClient, http.StatusUnauthorized, false},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			resp := h.serve(context.Background(), req(c.secret, c.client))
+			if resp.StatusCode != c.want || (resp.Headers["x-radar-server"] == "3a9a26c") != c.names {
+				t.Errorf("status %d headers %v body %s", resp.StatusCode, resp.Headers, resp.Body)
+			}
+		})
+	}
+}
+
 func TestJobsList(t *testing.T) {
 	t.Setenv("CLIP_SECRET_PARAM", "/test/clip-secret")
 	now := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
