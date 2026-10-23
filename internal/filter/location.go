@@ -64,6 +64,17 @@ var (
 		regexp.MustCompile(`(?i)\b(?:japan|tokyo|osaka|india|bangalore|bengaluru|mumbai|pune|hyderabad|chennai|delhi|noida|gurgaon|singapore|australia|sydney|melbourne|brisbane|new zealand|auckland|vietnam|hanoi|ho chi minh|china|beijing|shanghai|shenzhen|hong kong|korea|seoul|philippines|manila|cebu|malaysia|kuala lumpur|indonesia|jakarta|thailand|bangkok|pakistan)\b`),
 		regexp.MustCompile(`(?:東京|大阪|日本|印度|新加坡|澳洲|澳大利亞|雪梨|墨爾本|紐西蘭|越南|中國|北京|上海|深圳|香港|韓國|首爾|菲律賓|馬尼拉|馬來西亞|吉隆坡|印尼|泰國|曼谷|美國|英國|德國|法國|荷蘭|加拿大|波蘭|以色列)`),
 	}
+	// Regions wider than one country. A location naming a region and a place
+	// in it ("Bengaluru, India; APAC") is judged by the place.
+	regionRE    = regexp.MustCompile(`(?i)\b(?:apac|asia[- ]pacific|east asia|emea|europe|european union|eu|americas|amer|north america|latam|latin america|south america)\b`)
+	worldwideRE = regexp.MustCompile(`(?i)world ?wide|anywhere|\bglobal\b|any time ?zone|timezone independent`)
+	// Titles name places for other reasons ("Help Us Build…", "日商"), so a
+	// title is read for full country names, the Asian list, foreign cities
+	// and the upper-case US/UK only.
+	titlePlaceREs = []*regexp.Regexp{
+		regexp.MustCompile(`(?i)\b(?:united states|usa|canada|mexico|brazil|argentina|colombia|chile|peru|united kingdom|england|scotland|ireland|germany|france|spain|portugal|italy|netherlands|belgium|switzerland|austria|poland|czech|romania|bulgaria|greece|sweden|norway|denmark|finland|estonia|lithuania|latvia|ukraine|serbia|croatia|hungary|israel|turkey|egypt|nigeria|kenya|south africa|uae|united arab emirates|dubai|saudi)\b`),
+		regexp.MustCompile(`\b(?:US|U\.S\.|UK)\b`),
+	}
 	// Two-letter US state codes after a comma ("Boston, MA"). Case-sensitive on purpose.
 	usStateRE = regexp.MustCompile(`,\s*(?:AL|AK|AZ|AR|CA|CO|CT|DE|DC|FL|GA|HI|ID|IL|IN|IA|KS|KY|LA|ME|MD|MA|MI|MN|MS|MO|MT|NE|NV|NH|NJ|NM|NY|NC|ND|OH|OK|OR|PA|RI|SC|SD|TN|TX|UT|VT|VA|WA|WV|WI|WY)\b`)
 
@@ -94,8 +105,25 @@ func (c *LocationClassifier) Classify(j ats.Job) Verdict {
 		v.InTaiwan = true
 		return v
 	}
-	// Geography rules read the location field only: titles like "Help Us
-	// Build Global Payments" would otherwise look restricted or worldwide.
+	// A title naming a place abroad ("Backend Engineer (India)") is a role
+	// there; remote, it may still be open to others, so it needs a look.
+	if place := foreignPlace(j.Title); place != "" {
+		if mode == "remote" {
+			return Verdict{Class: ClassB, WorkMode: mode, Reason: "foreign_place_in_title"}
+		}
+		return Verdict{Class: ClassC, WorkMode: mode, Reason: "foreign_place_in_title"}
+	}
+	// Other geography rules read the location field only: titles like "Help
+	// Us Build Global Payments" would otherwise look restricted or worldwide.
+	if isBroad(j.Location) && !worldwideRE.MatchString(notBroadRE.ReplaceAllString(j.Location, "")) &&
+		foreignLocation(regionRE.ReplaceAllString(j.Location, " ")) {
+		// A region plus a place in it: an office or a country-bound remote role
+		// there, not the whole region.
+		if mode == "remote" {
+			return Verdict{Class: ClassB, WorkMode: mode, Reason: "region_names_foreign_place"}
+		}
+		return Verdict{Class: ClassC, WorkMode: mode, Reason: "region_names_foreign_place"}
+	}
 	if isBroad(j.Location) {
 		if jdRestricted(j.Description) {
 			return Verdict{Class: ClassC, WorkMode: mode, Reason: "jd_states_foreign_restriction"}
@@ -178,6 +206,21 @@ func isBroad(loc string) bool {
 	loc = worldRE.ReplaceAllString(loc, "worldwide")
 	loc = notBroadRE.ReplaceAllString(loc, "")
 	return broadRE.MatchString(loc)
+}
+
+// foreignPlace returns the first country or city outside Taiwan that a
+// title names, or "". It reads Chinese and English names; regions (APAC,
+// EMEA) are not places.
+func foreignPlace(title string) string {
+	if taiwanRE.MatchString(title) {
+		return ""
+	}
+	for _, re := range append([]*regexp.Regexp{foreignLocREs[2], foreignLocREs[3], foreignCityRE}, titlePlaceREs...) {
+		if m := re.FindString(title); m != "" {
+			return m
+		}
+	}
+	return ""
 }
 
 func foreignLocation(s string) bool {
