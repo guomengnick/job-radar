@@ -184,7 +184,7 @@ resource "aws_s3_bucket_notification" "mail" {
 resource "aws_cloudwatch_metric_alarm" "mail_failed" {
   for_each            = local.mail
   alarm_name          = "job-radar-mail-failed"
-  alarm_description   = "A stored message could not be parsed; see the job-radar-ingest logs."
+  alarm_description   = "有一封信解析失敗（104 可能改版）。看 /aws/lambda/job-radar-ingest 的 log。"
   namespace           = "JobRadar"
   metric_name         = "MailFailed"
   statistic           = "Sum"
@@ -194,4 +194,24 @@ resource "aws_cloudwatch_metric_alarm" "mail_failed" {
   comparison_operator = "GreaterThanThreshold"
   treat_missing_data  = "notBreaching"
   alarm_actions       = [aws_sns_topic.alerts.arn]
+}
+
+# 104 sends a 配對日報 every day. None parsed for 48 hours means the alerts
+# stopped: the Outlook rule, the 104 saved searches, SES, or a parser that no
+# longer finds jobs. Missing data counts as breaching, like the scan heartbeat.
+resource "aws_cloudwatch_metric_alarm" "no_alert_mail" {
+  for_each            = local.mail
+  alarm_name          = "job-radar-no-104-alert-48h"
+  alarm_description   = "48 小時沒有解析到任何 104 配對信。檢查 Outlook 轉寄規則、104 的搜尋條件，再看 /aws/lambda/job-radar-ingest 的 log。"
+  namespace           = "JobRadar"
+  metric_name         = "AlertsParsed"
+  statistic           = "Sum"
+  period              = 21600
+  evaluation_periods  = 8
+  datapoints_to_alarm = 8
+  threshold           = 1
+  comparison_operator = "LessThanThreshold"
+  treat_missing_data  = "breaching"
+  alarm_actions       = [aws_sns_topic.alerts.arn]
+  ok_actions          = [aws_sns_topic.alerts.arn]
 }
