@@ -9,7 +9,7 @@
     input, textarea { width: 100%; padding: 6px; box-sizing: border-box; font: inherit; }
     h2 { margin-top: 32px; }
     button { margin-top: 16px; padding: 6px 16px; }
-    #status, #apply-status { margin-left: 8px; color: #2e7d32; }
+    #status, #apply-status, #morning-status { margin-left: 8px; color: #2e7d32; }
     p { color: #555; }
   </style>
 </head>
@@ -21,6 +21,14 @@
   <label for="secret">密鑰（SSM /job-radar/clip-secret）</label>
   <input id="secret" type="password" autocomplete="off">
   <button id="save">儲存</button><span id="status"></span>
+
+  <h2>早上提醒</h2>
+  <p>每天這個時間，Chrome 跳出通知：日報列了幾個新的 104 職缺。按通知才會開分頁，不會自己開。那時 Chrome 沒開的話，當天第一次打開 Chrome 時提醒。</p>
+  <label><input type="checkbox" id="morning-on" style="width:auto"> 開啟早上提醒</label>
+  <label for="morning-time">時間</label>
+  <input type="time" id="morning-time">
+  <button id="save-morning">儲存</button>
+  <button id="test-morning">現在試一次</button><span id="morning-status"></span>
 
   <h2>一鍵帶入應徵</h2>
   <p>Telegram 上 70 分以上的 104 職缺有「帶入應徵」連結：打開後會選好履歷、寫好推薦信，再由你自己按「確認送出」。下面填 104 上履歷的名稱，要跟 104「選擇履歷」下拉選單裡的一字不差。這些只存在這台電腦的 Chrome 裡，不會進 git。</p>
