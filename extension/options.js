@@ -54,3 +54,24 @@ document.getElementById("save-apply").addEventListener("click", async () => {
   await chrome.storage.local.set({ apply: { resumes: map, opening: opening.value.trim(), closing: closing.value.trim() } });
   applyStatus.textContent = "已儲存";
 });
+
+// 早上提醒: on/off and the time; background.js reschedules when they change.
+const morningOn = document.getElementById("morning-on");
+const morningTime = document.getElementById("morning-time");
+const morningStatus = document.getElementById("morning-status");
+
+chrome.storage.local.get("morning").then(({ morning = {} }) => {
+  morningOn.checked = morning.on !== false;
+  morningTime.value = morning.time || "09:00";
+});
+
+document.getElementById("save-morning").addEventListener("click", async () => {
+  await chrome.storage.local.set({ morning: { on: morningOn.checked, time: morningTime.value || "09:00" } });
+  morningStatus.textContent = morningOn.checked ? `已儲存：每天 ${morningTime.value || "09:00"}` : "已關閉";
+});
+
+document.getElementById("test-morning").addEventListener("click", async () => {
+  morningStatus.textContent = "讀取中…";
+  const r = await chrome.runtime.sendMessage({ type: "morning-test" });
+  morningStatus.textContent = r && r.error ? `失敗：${r.error}` : "通知已送出（列的是最近一天的職缺）";
+});
