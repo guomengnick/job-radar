@@ -64,8 +64,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   return false;
 });
 
-// call sends one request to the endpoint with the secret and returns the
-// decoded JSON reply.
+// call sends one request to the endpoint with the secret and this
+// extension's version, and returns the decoded JSON reply. The server names
+// its commit in x-radar-server; the popup shows the last one seen. A 426
+// means this extension is older than the server accepts.
 async function call(path, init = {}) {
   const { endpoint, secret } = await settings();
   if (!endpoint || !secret) {
@@ -74,8 +76,10 @@ async function call(path, init = {}) {
   }
   const res = await fetch(new URL(path, endpoint), {
     ...init,
-    headers: { ...init.headers, "x-radar-secret": secret },
+    headers: { ...init.headers, "x-radar-secret": secret, "x-radar-client": chrome.runtime.getManifest().version },
   });
+  const server = res.headers.get("x-radar-server");
+  if (server) await chrome.storage.local.set({ server: { commit: server, seen: new Date().toISOString() } });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(`HTTP ${res.status} ${body.error || ""}`.trim());
   return body;

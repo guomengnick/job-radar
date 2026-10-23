@@ -16,9 +16,12 @@ func TestDigestShowsAlertJobs(t *testing.T) {
 	ctx := context.Background()
 	d, _, st, _ := setup(t)
 	var out bytes.Buffer
-	msg, err := Digest(ctx, d, notify.Writer{W: &out}, DigestOptions{DryRun: true})
+	msg, err := Digest(ctx, d, notify.Writer{W: &out}, DigestOptions{DryRun: true, Version: "3a9a26c"})
 	if err != nil || !strings.Contains(msg, "📭 104 配對信") || strings.Contains(msg, "<b>104 配對信") {
 		t.Fatalf("before any alert: %v\n%s", err, msg)
+	}
+	if !strings.HasSuffix(msg, "\n伺服器版本 3a9a26c") {
+		t.Errorf("the last line names the server's commit:\n%s", msg)
 	}
 
 	raw := mailWith(sesDMARCPass, "jobbank@ms1.104.com.tw", "配對日報", alertHTML(t))

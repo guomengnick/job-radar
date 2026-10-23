@@ -115,9 +115,17 @@ document.getElementById("settings").addEventListener("click", (e) => {
   chrome.runtime.openOptionsPage();
 });
 
+// The two versions: this extension's, and the server commit the last reply
+// named (refreshed by the job list this popup loads on opening).
+async function showVersions() {
+  const { server } = await chrome.storage.local.get("server");
+  const seen = server ? `伺服器 ${server.commit}` : "伺服器版本還不知道";
+  document.getElementById("versions").textContent = `擴充功能 ${chrome.runtime.getManifest().version}｜${seen}`;
+}
+
 const today = new Date();
 day.value = day.max = isoDay(today);
 day.min = isoDay(new Date(today.getFullYear(), today.getMonth(), today.getDate() - MAX_DAYS_BACK));
 day.addEventListener("change", () => day.value && load());
-load();
+load().finally(showVersions);
 countJobTabs();
