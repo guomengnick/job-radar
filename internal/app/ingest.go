@@ -89,7 +89,7 @@ func IngestMail(ctx context.Context, d Deps, key string, raw io.Reader) (MailOut
 		storeErr = fmt.Errorf("store %s: %w", key, storeErr)
 	}
 	if d.Metrics != nil {
-		metrics.EmitMail(d.Metrics, o.Status, d.Now())
+		metrics.EmitMail(d.Metrics, o.Status, o.Status == "parsed" && o.Reason == "alert", d.Now())
 	}
 	d.Log.Info("mail ingested", "key", o.Key, "sender", o.Sender, "status", o.Status, "reason", o.Reason,
 		"jobs", o.Jobs, "new", o.New, "pending", o.Pending)
