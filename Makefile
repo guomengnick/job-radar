@@ -1,4 +1,4 @@
-.PHONY: test vet build lambda plan apply clean extension-config
+.PHONY: test vet build lambda plan apply check-main deployed clean extension-config
 
 test:
 	go test -race ./...
@@ -18,8 +18,30 @@ lambda:
 plan: lambda
 	cd infra && terraform plan
 
-apply: lambda
+# What runs in AWS should be what main says. apply refuses unless this
+# checkout is on main, equal to GitHub's main, with no uncommitted change in
+# the code that goes into the zip. ALLOW_DIRTY=1 skips the check for an
+# emergency; the fix still goes to main right after.
+apply: check-main lambda
 	cd infra && terraform apply
+
+CODE := cmd internal config go.mod go.sum
+
+check-main:
+ifndef ALLOW_DIRTY
+	@git fetch -q origin main
+	@branch=$$(git branch --show-current); test "$$branch" = main || \
+		{ echo "✋ 不在 main（現在是 $$branch）。先 git switch main"; exit 1; }
+	@test "$$(git rev-parse HEAD)" = "$$(git rev-parse origin/main)" || \
+		{ echo "✋ 跟 GitHub 的 main 不一樣。先 git pull --ff-only（或把本機的 commit 走 PR）"; exit 1; }
+	@test -z "$$(git status --porcelain -- $(CODE))" || \
+		{ echo "✋ 有沒 commit 的程式碼，會被編進去："; git status --short -- $(CODE); exit 1; }
+	@echo "✓ main $$(git rev-parse --short HEAD)，跟 GitHub 一致，程式碼沒有未 commit 的修改"
+endif
+
+# Which commit each function runs, read from the deployed binaries.
+deployed:
+	@./scripts/deployed.sh
 
 clean:
 	rm -rf build
