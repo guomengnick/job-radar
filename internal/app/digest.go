@@ -304,6 +304,8 @@ var reasons = map[string]string{
 	"taichung_hybrid_manual_review": "台中混合辦公，需人工判斷",
 	"outside_taichung":              "台中以外、非遠端",
 	"salary_below_floor":            "薪資低於門檻",
+	"foreign_place_in_title":        "職稱寫了國外地點，需確認",
+	"region_names_foreign_place":    "亞太等地區裡寫了國外城市，需確認",
 }
 
 func reasonText(r string) string {
