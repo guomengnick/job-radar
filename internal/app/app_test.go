@@ -101,7 +101,7 @@ func TestScanBaselineThenNewJob(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"✅ fake", "⚠️ lever", "值得看的新職缺：1 筆", "https://x/2", "[A "} {
+	for _, want := range []string{"✅ fake", "⚠️ lever", "值得看的新職缺：1 筆", "https://x/2", "[A 技能", "技能＝關鍵字比對的技能分"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("digest missing %q:\n%s", want, msg)
 		}
