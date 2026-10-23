@@ -154,6 +154,16 @@ make plan
 make apply
 ```
 
+`make apply` 會先檢查三件事，不符合就不部署：在 main、跟 GitHub 的 main 一致、程式碼沒有未 commit 的修改。因為 `make` 編譯的是資料夾裡現在的程式碼，從別的分支或舊的 main 部署，會讓雲端跑的東西跟 main 不一樣，舊版還會安靜地蓋掉新版。真的要緊急部署時才用 `ALLOW_DIRTY=1 make apply`，之後馬上把修正走 PR 進 main。
+
+部署完確認雲端跑的是哪個 commit（下載每個函式的 zip，讀出 Go 編譯時寫進去的 commit，跟 GitHub 的 main 比）：
+
+```bash
+make deployed
+```
+
+其他看得到版本的地方：日報最後一行「伺服器版本」、擴充功能小視窗最下面，以及每一行 log 的 `commit` 欄位。commit 後面有 `+dirty` 或 `*`，表示編譯時資料夾裡有沒 commit 或沒進 git 的檔案。
+
 部署完成後，信箱會收到 SNS 的訂閱確認信，記得點確認，之後才收得到告警。
 
 告警也會由 alarm 函式轉發到 Telegram（不用確認）。要測試，把任一個告警手動設成 ALARM，Telegram 和信箱都應該收到「🚨 告警」；下一次評估時它會自己回到原本的狀態：
