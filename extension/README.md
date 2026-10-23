@@ -64,6 +64,14 @@ AWS_PROFILE=radar make extension-config
 
 沒有那個檔案的話，也可以在設定頁手動貼上兩個值：接收網址是 `terraform -chdir=infra output -raw clip_url`，密鑰是 SSM 的 `/job-radar/clip-secret`。
 
+## 版本
+
+小視窗最下面寫著兩個版本：擴充功能自己的（`manifest.json` 的 `version`），和伺服器上次回覆時說的 commit。
+
+- 擴充功能每次呼叫都帶 `x-radar-client`，伺服器回 `x-radar-server`。
+- 伺服器改了介面、舊的擴充功能會出錯時，就調高 `cmd/lambda/main.go` 的 `minClient`。太舊的擴充功能會收到 HTTP 426 和「請重新載入」的說明，而不是莫名其妙的錯誤。
+- 擴充功能改版時，`manifest.json` 的版本要跟著加。
+
 ## 換密鑰
 
 密鑰外洩時，產生新的、覆蓋舊的，再重新執行 `make extension-config` 並重新載入擴充功能（手動填過設定頁的話，要在設定頁換成新值）：
