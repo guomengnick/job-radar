@@ -115,6 +115,8 @@ location:
 # Rough fit score: weights of matched skills in title + JD, capped at 100.
 # Any programming language is acceptable (2026-10-11), so a language the user
 # does not know is never a penalty — it simply earns nothing here.
+# Chinese terms (2026-10-23) let 104 postings score: their alert text is
+# Chinese and about 150 characters long.
 skills:
   - { name: "C#", pattern: '(?i)c#', weight: 15 }
   - { name: ".NET", pattern: '(?i)\.net\b', weight: 15 }
@@ -122,22 +124,22 @@ skills:
   - { name: "Python", pattern: '(?i)\bpython\b', weight: 10 }
   - { name: "Kafka", pattern: '(?i)\bkafka\b', weight: 12 }
   - { name: "PostgreSQL", pattern: '(?i)\bpostgres(?:ql)?\b', weight: 10 }
-  - { name: "SQL", pattern: '(?i)\bsql\b', weight: 4 }
-  - { name: "Data pipeline", pattern: '(?i)data pipelines?|etl\b|ingestion|event[- ]driven|streaming', weight: 10 }
-  - { name: "Distributed systems", pattern: '(?i)distributed systems?', weight: 6 }
-  - { name: "Backend/API", pattern: '(?i)\bback[- ]?end\b|\bapis?\b|microservices?', weight: 6 }
-  - { name: "Industrial/IoT", pattern: '(?i)industrial|manufacturing|factory|\biot\b|iiot|robotic|semiconductor|equipment|telemetry', weight: 10 }
+  - { name: "SQL", pattern: '(?i)\bsql\b|資料庫', weight: 4 }
+  - { name: "Data pipeline", pattern: '(?i)data pipelines?|etl\b|ingestion|event[- ]driven|streaming|資料管線|數據管線|資料流|數據流|串流|事件驅動', weight: 10 }
+  - { name: "Distributed systems", pattern: '(?i)distributed systems?|分散式', weight: 6 }
+  - { name: "Backend/API", pattern: '(?i)\bback[- ]?end\b|\bapis?\b|microservices?|後端|微服務', weight: 6 }
+  - { name: "Industrial/IoT", pattern: '(?i)industrial|manufacturing|factory|\biot\b|iiot|robotic|semiconductor|equipment|telemetry|物聯網|工業|製造|工廠|半導體|機台|設備', weight: 10 }
   # Machine data collection, the predictive-maintenance pipeline's front end
   # (RS485 Modbus RTU). Approved 2026-10-18; Chinese terms match 104 postings.
   - { name: "MQTT/IoT data collection", pattern: '(?i)\bmqtt\b|modbus|data acquisition|資料收集|數據收集|資料採集|數據採集', weight: 10 }
-  - { name: "Observability", pattern: '(?i)grafana|prometheus|observability|monitoring', weight: 5 }
+  - { name: "Observability", pattern: '(?i)grafana|prometheus|observability|monitoring|監控', weight: 5 }
   - { name: "Parquet/DuckDB", pattern: '(?i)parquet|duckdb', weight: 5 }
-  - { name: "Docker", pattern: '(?i)\bdocker\b', weight: 4 }
-  - { name: "Reliability", pattern: '(?i)idempoten|outbox|exactly[- ]once|at[- ]least[- ]once|fault[- ]toleran', weight: 6 }
-  - { name: "Performance", pattern: '(?i)performance|latency|memory (?:usage|footprint)|profil', weight: 4 }
-  - { name: "CI/CD", pattern: '(?i)ci/cd|continuous integration|build pipeline', weight: 3 }
+  - { name: "Docker", pattern: '(?i)\bdocker\b|容器', weight: 4 }
+  - { name: "Reliability", pattern: '(?i)idempoten|outbox|exactly[- ]once|at[- ]least[- ]once|fault[- ]toleran|冪等|容錯|高可用', weight: 6 }
+  - { name: "Performance", pattern: '(?i)performance|latency|memory (?:usage|footprint)|profil|效能|延遲', weight: 4 }
+  - { name: "CI/CD", pattern: '(?i)ci/cd|continuous integration|build pipeline|持續整合|自動化部署', weight: 3 }
   - { name: "Linux", pattern: '(?i)\blinux\b', weight: 3 }
-  - { name: "Computer vision", pattern: '(?i)computer vision|opencv|image processing', weight: 6 }
+  - { name: "Computer vision", pattern: '(?i)computer vision|opencv|image processing|影像辨識|影像處理|電腦視覺', weight: 6 }
   # Cloud skills (2026-10-15). AWS scores because radar itself runs on AWS.
   # Terraform and Kubernetes score 0: recorded on each job for the monthly
   # "how many postings ask for this" count, without changing notifications.

@@ -1,6 +1,7 @@
 package filter
 
 import (
+	"slices"
 	"testing"
 
 	"github.com/guomengnick/job-radar/config"
@@ -135,6 +136,16 @@ func TestLocationClassifier(t *testing.T) {
 		{"remote pinned to US city", ats.Job{Location: "NYC, New York", WorkplaceType: "remote"}, ClassC},
 		{"worldwide plus a country", ats.Job{Location: "United States of America; Worldwide - Remote"}, ClassA},
 		{"global anywhere", ats.Job{Location: "Global Anywhere; Remote - EMEA"}, ClassA},
+		// 2026-10-23: a region plus a place in it is judged by the place
+		// (Fivetran, "Bengaluru, India; APAC"); a title naming a place abroad too.
+		{"apac office in india", ats.Job{Location: "Bengaluru, India; APAC"}, ClassC},
+		{"apac remote pinned to a country", ats.Job{Location: "Remote - Singapore, APAC"}, ClassB},
+		{"apac and emea", ats.Job{Location: "Remote - EMEA, APAC"}, ClassA},
+		{"apac with taipei", ats.Job{Location: "APAC (Taipei, Singapore)"}, ClassB},
+		{"place in title", ats.Job{Title: "Backend Engineer (India)", Location: "Bengaluru"}, ClassC},
+		{"place in title, remote", ats.Job{Title: "Senior Engineer, Japan", Location: "Remote"}, ClassB},
+		{"us in title", ats.Job{Title: "Software Engineer - US", Location: "Remote, Global"}, ClassB},
+		{"chinese place in title", ats.Job{Title: "後端工程師（新加坡）", Location: ""}, ClassC},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -182,9 +193,13 @@ func TestScore(t *testing.T) {
 	if cloud != 10 || len(cm) != 3 {
 		t.Fatalf("cloud skills scored %d %v, want 10 with AWS, Terraform, Kubernetes", cloud, cm)
 	}
+	// Chinese terms score too (104 postings): 後端 6, 設備 10, MQTT 10.
 	mqtt, mm := s.Score("後端工程師", "透過 MQTT 收集設備資料")
-	if mqtt != 10 || len(mm) != 1 || mm[0] != "MQTT/IoT data collection" {
-		t.Fatalf("MQTT scored %d %v, want 10 from the data-collection skill only", mqtt, mm)
+	if mqtt != 26 || !slices.Equal(mm, []string{"Backend/API", "Industrial/IoT", "MQTT/IoT data collection"}) {
+		t.Fatalf("MQTT scored %d %v, want 26 from backend, industrial and data collection", mqtt, mm)
+	}
+	if zh, zm := s.Score("資料工程師", "建置資料管線與分散式系統，使用影像辨識"); zh != 22 || len(zm) != 3 {
+		t.Fatalf("Chinese skills scored %d %v, want 22 from pipeline, distributed and vision", zh, zm)
 	}
 	low, _ := s.Score("Senior Backend Engineer", "Ruby on Rails and React.")
 	if low >= 20 {

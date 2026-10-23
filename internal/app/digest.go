@@ -155,7 +155,7 @@ func BuildDigest(now time.Time, runs []store.Run, jobs, left []store.JobRecord, 
 		b.WriteString("今天沒有。\n")
 	}
 	for _, j := range boardJobs {
-		fmt.Fprintf(&b, "\n[%s %d] <a href=\"%s\">%s</a>\n%s｜%s\n",
+		fmt.Fprintf(&b, "\n[%s 技能%d] <a href=\"%s\">%s</a>\n%s｜%s\n",
 			j.Class, j.Score, html.EscapeString(j.URL), html.EscapeString(j.Title),
 			html.EscapeString(j.Board), html.EscapeString(truncate(j.Location, 80)))
 		if len(j.Skills) > 0 {
@@ -167,7 +167,7 @@ func BuildDigest(now time.Time, runs []store.Run, jobs, left []store.JobRecord, 
 		fmt.Fprintf(&b, "\n<b>104 配對信：%d 筆</b>\n", len(alertJobs))
 	}
 	for _, j := range alertJobs {
-		fmt.Fprintf(&b, "\n[%s %d] <a href=\"%s\">%s</a>\n%s｜%s｜%s\n",
+		fmt.Fprintf(&b, "\n[%s 技能%d] <a href=\"%s\">%s</a>\n%s｜%s｜%s\n",
 			j.Class, j.Score, html.EscapeString(j.URL), html.EscapeString(j.Title),
 			html.EscapeString(j.Board), html.EscapeString(j.Location), html.EscapeString(j.Salary))
 		if len(j.Skills) > 0 {
@@ -181,7 +181,7 @@ func BuildDigest(now time.Time, runs []store.Run, jobs, left []store.JobRecord, 
 	if more > 0 {
 		fmt.Fprintf(&b, "\n另有 %d 筆留到下次。\n", more)
 	}
-	b.WriteString("\nA＝明確可從台灣應徵；B＝待確認。")
+	b.WriteString("\nA＝明確可從台灣應徵；B＝待確認。技能＝關鍵字比對的技能分，不是 AI 評分。")
 	if len(alertJobs) > 0 {
 		b.WriteString("104 的 A＝遠端，B＝台中到班。")
 	}
@@ -304,6 +304,8 @@ var reasons = map[string]string{
 	"taichung_hybrid_manual_review": "台中混合辦公，需人工判斷",
 	"outside_taichung":              "台中以外、非遠端",
 	"salary_below_floor":            "薪資低於門檻",
+	"foreign_place_in_title":        "職稱寫了國外地點，需確認",
+	"region_names_foreign_place":    "亞太等地區裡寫了國外城市，需確認",
 }
 
 func reasonText(r string) string {
