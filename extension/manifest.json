@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "送到雷達",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "把職缺頁送到 job-radar 評分，結果由 Telegram 回覆：目前這一頁，或一次送出所有開著的 104 職缺；也能一次開啟 104 配對信裡的職缺，或從 Telegram 連結帶入 104 應徵表單（由你自己送出）。",
   "action": { "default_title": "送到雷達", "default_popup": "popup.html" },
   "background": { "service_worker": "background.js" },
