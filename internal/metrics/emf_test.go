@@ -34,14 +34,20 @@ func emf(t *testing.T, line []byte) map[string]float64 {
 
 func TestEmitMail(t *testing.T) {
 	at := time.Date(2026, 10, 20, 0, 0, 0, 0, time.UTC)
-	for status, wantFailed := range map[string]float64{"failed": 1, "ignored": 0, "unparsed": 0} {
+	for _, c := range []struct {
+		status        string
+		alert         bool
+		failed, alrts float64
+	}{
+		{"failed", false, 1, 0}, {"ignored", false, 0, 0}, {"unparsed", false, 0, 0}, {"parsed", true, 0, 1}, {"parsed", false, 0, 0},
+	} {
 		var b bytes.Buffer
-		if err := EmitMail(&b, status, at); err != nil {
+		if err := EmitMail(&b, c.status, c.alert, at); err != nil {
 			t.Fatal(err)
 		}
 		got := emf(t, b.Bytes())
-		if got["MailReceived"] != 1 || got["MailFailed"] != wantFailed || len(got) != 2 {
-			t.Errorf("%s: %v", status, got)
+		if got["MailReceived"] != 1 || got["MailFailed"] != c.failed || got["AlertsParsed"] != c.alrts || len(got) != 3 {
+			t.Errorf("%s %v: %v", c.status, c.alert, got)
 		}
 	}
 }
