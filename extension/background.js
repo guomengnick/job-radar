@@ -40,9 +40,11 @@ async function settings() {
   };
 }
 
-// Only the extension's own pages can send these messages: there is no
-// content script and no externally_connectable.
-chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
+// Only the extension's own pages (the popup) may send these messages. The
+// content script apply.js runs inside 104 pages and sends none, so anything
+// from a tab is ignored; there is no externally_connectable.
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+  if (sender.id !== chrome.runtime.id || sender.tab) return false;
   switch (msg && msg.type) {
     case "clip":
       clipTab(msg.tabId);
