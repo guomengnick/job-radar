@@ -17,6 +17,7 @@ type DigestOptions struct {
 	ExpectedATS []string      // an ATS with no run in the window is reported as missing
 	DryRun      bool          // build and send the message but leave jobs pending
 	Location    *time.Location
+	Version     string // the server's commit, shown on the last line
 }
 
 // Digest sends one message: what each scan did (the "dashboard" on the
@@ -58,6 +59,9 @@ func Digest(ctx context.Context, d Deps, n notify.Notifier, o DigestOptions) (st
 	if leftErr != nil {
 		d.Log.Error("digest: list left-out 104 jobs", "err", leftErr)
 		msg += "\n⚠️ 沒列出的 104 職缺讀取失敗，原因見 CloudWatch。"
+	}
+	if o.Version != "" {
+		msg += "\n伺服器版本 " + o.Version
 	}
 	if err := n.Send(ctx, msg); err != nil {
 		return msg, err
