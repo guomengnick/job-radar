@@ -43,6 +43,7 @@ import (
 	"github.com/guomengnick/job-radar/internal/assess"
 	"github.com/guomengnick/job-radar/internal/notify"
 	"github.com/guomengnick/job-radar/internal/store"
+	"github.com/guomengnick/job-radar/internal/version"
 )
 
 type Event struct {
@@ -54,17 +55,29 @@ type Event struct {
 	DryRun     bool   `json:"dry_run"`
 }
 
+// minClient is the oldest 送到雷達 extension this server answers. Raise it
+// when a change to the endpoints breaks older extensions: they get 426 and
+// a message to reload. An extension too old to send its version (before
+// 1.4.0) is still answered.
+const minClient = "1.4.0"
+
 type handler struct {
 	deps app.Deps
 	s3   *s3.Client
 	log  *slog.Logger
+	// commit is the code this binary was built from, sent back to the
+	// extension and written on every log line.
+	commit string
 	// secret reads a SecureString parameter. Each role may read only its own
 	// parameters, so a bug in the scanner cannot leak the bot token.
 	secret func(ctx context.Context, name string) (string, error)
 }
 
 func main() {
-	log := slog.New(slog.NewJSONHandler(os.Stderr, nil))
+	// Every log line names the commit, so an alarm's log points at the code
+	// that wrote it.
+	commit := version.Commit()
+	log := slog.New(slog.NewJSONHandler(os.Stderr, nil)).With("commit", commit)
 	cfg, err := config.Default()
 	if err != nil {
 		log.Error("config", "err", err)
@@ -79,7 +92,7 @@ func main() {
 		mustEnv("TABLE_BOARDS"), mustEnv("TABLE_JOBS"), mustEnv("TABLE_RUNS"))
 	// EMF metric lines go to stdout, where CloudWatch Logs extracts them.
 	params := ssm.NewFromConfig(awsCfg)
-	h := &handler{deps: app.NewDeps(cfg, st, log, os.Stdout), s3: s3.NewFromConfig(awsCfg), log: log,
+	h := &handler{deps: app.NewDeps(cfg, st, log, os.Stdout), s3: s3.NewFromConfig(awsCfg), log: log, commit: commit,
 		secret: func(ctx context.Context, name string) (string, error) {
 			out, err := params.GetParameter(ctx, &ssm.GetParameterInput{Name: &name, WithDecryption: ptr(true)})
 			if err != nil {
@@ -124,7 +137,7 @@ func (h *handler) handle(ctx context.Context, raw json.RawMessage) (any, error) 
 		n := notify.Telegram{Token: token, ChatID: mustEnv("TELEGRAM_CHAT_ID")}
 		taipei, _ := time.LoadLocation("Asia/Taipei")
 		expected := strings.Split(envOr("EXPECTED_ATS", "greenhouse,lever,ashby"), ",")
-		_, err = app.Digest(ctx, h.deps, n, app.DigestOptions{ExpectedATS: expected, DryRun: e.DryRun, Location: taipei})
+		_, err = app.Digest(ctx, h.deps, n, app.DigestOptions{ExpectedATS: expected, DryRun: e.DryRun, Location: taipei, Version: h.commit})
 		return "digest sent", err
 	case "batch-check":
 		return h.checkBatches(ctx)
@@ -222,7 +235,9 @@ type urlHandler func(context.Context, events.LambdaFunctionURLRequest) events.La
 // serve answers the browser extension. The function URL is public, so the
 // shared secret in the x-radar-secret header is the gate: past the route
 // check, nothing is read or called before it matches. Errors are logged in
-// full and answered with a status only.
+// full and answered with a status only. Past the gate, an extension older
+// than minClient is refused, and every answer names the server's commit in
+// x-radar-server.
 func (h *handler) serve(ctx context.Context, r events.LambdaFunctionURLRequest) events.LambdaFunctionURLResponse {
 	routes := map[string]map[string]urlHandler{
 		"/":      {http.MethodPost: h.clip},
@@ -250,7 +265,18 @@ func (h *handler) serve(ctx context.Context, r events.LambdaFunctionURLRequest) 
 		h.log.Warn("clip refused", "path", path, "source_ip", r.RequestContext.HTTP.SourceIP)
 		return reply(http.StatusUnauthorized, "unauthorized")
 	}
-	return next(ctx, r)
+	var resp events.LambdaFunctionURLResponse
+	if v := header(r.Headers, "x-radar-client"); v != "" && !version.AtLeast(v, minClient) {
+		h.log.Warn("old extension", "client", v, "min", minClient)
+		resp = reply(http.StatusUpgradeRequired, fmt.Sprintf("擴充功能 %s 太舊，需要 %s 以上：git pull 後到 chrome://extensions 重新載入", v, minClient))
+	} else {
+		resp = next(ctx, r)
+	}
+	if resp.Headers == nil {
+		resp.Headers = map[string]string{}
+	}
+	resp.Headers["x-radar-server"] = h.commit
+	return resp
 }
 
 // jobs lists the 104 alert jobs first seen since the time in the since
