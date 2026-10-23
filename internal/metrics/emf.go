@@ -68,16 +68,21 @@ func EmitScan(w io.Writer, r store.Run) error {
 }
 
 // Mail metrics. Each custom metric is billed monthly past the free tier, so
-// ingest publishes two: received and failed. Ignored mail (test messages, a
-// mailbox's forwarding confirmation) is visible in the logs instead.
-var mailNames = []string{"MailReceived", "MailFailed"}
+// ingest publishes three: received, failed, and 104 match alerts parsed (a
+// day without one means the alerts stopped coming). Ignored mail (test
+// messages, a mailbox's forwarding confirmation) is visible in the logs.
+var mailNames = []string{"MailReceived", "MailFailed", "AlertsParsed"}
 
 // EmitMail writes one EMF line for one stored message. status is the ingest
-// outcome; only "failed" counts as a failure.
-func EmitMail(w io.Writer, status string, at time.Time) error {
-	failed := 0.0
+// outcome; only "failed" counts as a failure. alert marks a match alert whose
+// jobs were read.
+func EmitMail(w io.Writer, status string, alert bool, at time.Time) error {
+	failed, parsed := 0.0, 0.0
 	if status == "failed" {
 		failed = 1
+	}
+	if alert {
+		parsed = 1
 	}
 	defs := make([]map[string]string, 0, len(mailNames))
 	for _, n := range mailNames {
@@ -93,5 +98,6 @@ func EmitMail(w io.Writer, status string, at time.Time) error {
 		"status":       status,
 		"MailReceived": 1.0,
 		"MailFailed":   failed,
+		"AlertsParsed": parsed,
 	})
 }
