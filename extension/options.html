@@ -6,9 +6,10 @@
   <style>
     body { font: 14px system-ui, sans-serif; margin: 24px; max-width: 520px; }
     label { display: block; margin: 16px 0 4px; font-weight: 600; }
-    input { width: 100%; padding: 6px; box-sizing: border-box; }
+    input, textarea { width: 100%; padding: 6px; box-sizing: border-box; font: inherit; }
+    h2 { margin-top: 32px; }
     button { margin-top: 16px; padding: 6px 16px; }
-    #status { margin-left: 8px; color: #2e7d32; }
+    #status, #apply-status { margin-left: 8px; color: #2e7d32; }
     p { color: #555; }
   </style>
 </head>
@@ -20,6 +21,16 @@
   <label for="secret">密鑰（SSM /job-radar/clip-secret）</label>
   <input id="secret" type="password" autocomplete="off">
   <button id="save">儲存</button><span id="status"></span>
+
+  <h2>一鍵帶入應徵</h2>
+  <p>Telegram 上 70 分以上的 104 職缺有「帶入應徵」連結：打開後會選好履歷、寫好推薦信，再由你自己按「確認送出」。下面填 104 上履歷的名稱，要跟 104「選擇履歷」下拉選單裡的一字不差。這些只存在這台電腦的 Chrome 裡，不會進 git。</p>
+  <div id="resumes"></div>
+  <label for="opening">推薦信開頭</label>
+  <textarea id="opening" rows="3"></textarea>
+  <label for="closing">推薦信結尾</label>
+  <textarea id="closing" rows="3"></textarea>
+  <p>推薦信 = 開頭、AI 依職缺寫的一句、結尾，各一行。</p>
+  <button id="save-apply">儲存</button><span id="apply-status"></span>
   <script src="config.local.js"></script>
   <script src="options.js"></script>
 </body>

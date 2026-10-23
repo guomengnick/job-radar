@@ -20,3 +20,37 @@ document.getElementById("save").addEventListener("click", async () => {
   status.textContent = "已儲存";
   status.style.color = "#2e7d32";
 });
+
+// 一鍵帶入應徵: which 104 résumé each version maps to, and the letter's fixed
+// opening and closing. apply.js reads them on the 104 page.
+const VERSIONS = ["A", "A+ML", "B", "B+ML", "C", "C+ML"];
+const resumes = document.getElementById("resumes");
+const opening = document.getElementById("opening");
+const closing = document.getElementById("closing");
+const applyStatus = document.getElementById("apply-status");
+
+for (const v of VERSIONS) {
+  const label = document.createElement("label");
+  label.textContent = `${v} 版用的 104 履歷`;
+  const input = document.createElement("input");
+  input.dataset.version = v;
+  label.htmlFor = input.id = "resume-" + v.replace("+", "-");
+  resumes.append(label, input);
+}
+
+chrome.storage.local.get("apply").then(({ apply = {} }) => {
+  for (const input of resumes.querySelectorAll("input")) {
+    input.value = (apply.resumes || {})[input.dataset.version] || "";
+  }
+  opening.value = apply.opening || "";
+  closing.value = apply.closing || "";
+});
+
+document.getElementById("save-apply").addEventListener("click", async () => {
+  const map = {};
+  for (const input of resumes.querySelectorAll("input")) {
+    if (input.value.trim()) map[input.dataset.version] = input.value.trim();
+  }
+  await chrome.storage.local.set({ apply: { resumes: map, opening: opening.value.trim(), closing: closing.value.trim() } });
+  applyStatus.textContent = "已儲存";
+});
