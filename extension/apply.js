@@ -14,16 +14,10 @@
 // and sends it.
 //
 // It runs at document_start to take the fragment before 104's page script
-// sees it, and removes it so a reload or a shared link does not refill.
+// sees it, and removes it so a reload does not refill.
 
 (() => {
   const MARK = "#radar-apply";
-  if (!location.hash.startsWith(MARK)) return;
-  const raw = location.hash.slice(MARK.length).replace(/^\?/, "");
-  history.replaceState(history.state, "", location.pathname + location.search);
-  const params = new URLSearchParams(raw);
-  const cv = params.get("cv") || "";
-  const line = (params.get("line") || "").trim();
 
   // How long to wait for the popup: the page and 104's script load first.
   const WAIT_MS = 20000;
@@ -115,7 +109,7 @@
     document.body.appendChild(box);
   }
 
-  async function run() {
+  async function run(cv, line) {
     const { apply = {} } = await chrome.storage.local.get("apply");
     const body = await waitFor(() => document.querySelector(".apply-popup__body"));
     if (!body) {
@@ -143,10 +137,25 @@
     note([...done.map((s) => "✅ " + s), ...problems.map((s) => "⚠️ " + s), "看過後請自己按「確認送出」。"], problems.length === 0);
   }
 
-  const start = () => run().catch((err) => note([`出錯了：${err.message}`], false));
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", start, { once: true });
-  } else {
-    start();
+  // take reads and removes the fragment. A link pasted into a tab already on
+  // that job changes only the fragment and does not reload the page, so the
+  // hashchange listener catches that case.
+  let busy = false;
+  function take() {
+    if (busy || !location.hash.startsWith(MARK)) return;
+    busy = true;
+    const params = new URLSearchParams(location.hash.slice(MARK.length).replace(/^\?/, ""));
+    history.replaceState(history.state, "", location.pathname + location.search);
+    const go = () =>
+      run(params.get("cv") || "", (params.get("line") || "").trim())
+        .catch((err) => note([`出錯了：${err.message}`], false))
+        .finally(() => (busy = false));
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", go, { once: true });
+    } else {
+      go();
+    }
   }
+  take();
+  window.addEventListener("hashchange", take);
 })();
