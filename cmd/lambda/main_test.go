@@ -47,6 +47,23 @@ func TestS3Records(t *testing.T) {
 	}
 }
 
+func TestSNSRecords(t *testing.T) {
+	sns := `{"Records":[{"EventSource":"aws:sns","EventVersion":"1.0","Sns":{"MessageId":"m1","Subject":"ALARM: \"job-radar-clip-errors\"",
+		"Message":"{\"AlarmName\":\"job-radar-clip-errors\",\"NewStateValue\":\"ALARM\"}"}}]}`
+	recs, ok := snsRecords(json.RawMessage(sns))
+	if !ok || recs[0].SNS.MessageID != "m1" || !strings.Contains(recs[0].SNS.Message, "job-radar-clip-errors") {
+		t.Fatalf("sns = %+v %v", recs, ok)
+	}
+	for _, other := range []string{`{"task":"digest"}`, `{"Records":[{"eventSource":"aws:s3"}]}`, `{"Records":[]}`} {
+		if _, ok := snsRecords(json.RawMessage(other)); ok {
+			t.Errorf("%s read as SNS", other)
+		}
+	}
+	if _, ok := s3Records(json.RawMessage(sns)); ok {
+		t.Error("an SNS event read as S3")
+	}
+}
+
 func TestURLRequest(t *testing.T) {
 	for payload, want := range map[string]bool{
 		`{"version":"2.0","rawPath":"/","headers":{"x-radar-secret":"s"},"requestContext":{"http":{"method":"POST","sourceIp":"192.0.2.1"}},"body":"{}"}`: true,

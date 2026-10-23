@@ -1,5 +1,5 @@
-// Command lambda is the AWS Lambda entry point. One binary serves five
-// functions. EventBridge Scheduler passes the task to three of them:
+// Command lambda is the AWS Lambda entry point. One binary serves every
+// function. EventBridge Scheduler passes the task to three of them:
 //
 //	{"task":"scan","ats":"greenhouse"}
 //	{"task":"digest"}
@@ -12,6 +12,9 @@
 // batch every ten minutes to send the summary of each batch that has ended:
 //
 //	{"task":"batch-check"}
+//
+// alarm is subscribed to the alerts SNS topic and forwards each CloudWatch
+// alarm to Telegram; the topic's email subscription stays as the fallback.
 package main
 
 import (
@@ -96,6 +99,9 @@ func (h *handler) handle(ctx context.Context, raw json.RawMessage) (any, error) 
 	if rec, ok := s3Records(raw); ok {
 		return h.ingest(ctx, rec)
 	}
+	if rec, ok := snsRecords(raw); ok {
+		return h.alarm(ctx, rec)
+	}
 	var e Event
 	if err := json.Unmarshal(raw, &e); err != nil {
 		return "", fmt.Errorf("decode event: %w", err)
@@ -137,6 +143,37 @@ func s3Records(raw json.RawMessage) ([]events.S3EventRecord, bool) {
 		return nil, false
 	}
 	return e.Records, true
+}
+
+// snsRecords returns the records of an SNS notification.
+func snsRecords(raw json.RawMessage) ([]events.SNSEventRecord, bool) {
+	var e events.SNSEvent
+	if json.Unmarshal(raw, &e) != nil || len(e.Records) == 0 || e.Records[0].EventSource != "aws:sns" {
+		return nil, false
+	}
+	return e.Records, true
+}
+
+// alarm sends each SNS message to Telegram. An error makes Lambda retry the
+// event (two retries), so a Telegram outage delays the message rather than
+// dropping it; a duplicate after a partial failure is harmless.
+func (h *handler) alarm(ctx context.Context, recs []events.SNSEventRecord) (string, error) {
+	token, err := h.secret(ctx, mustEnv("TELEGRAM_TOKEN_PARAM"))
+	if err != nil {
+		return "", err
+	}
+	n := notify.Telegram{Token: token, ChatID: mustEnv("TELEGRAM_CHAT_ID")}
+	taipei, err := time.LoadLocation("Asia/Taipei")
+	if err != nil {
+		taipei = time.FixedZone("UTC+8", 8*60*60)
+	}
+	for _, r := range recs {
+		msg := app.BuildAlarm(r.SNS.Subject, r.SNS.Message, envOr("AWS_REGION", "ap-southeast-2"), taipei)
+		if err := n.Send(ctx, msg); err != nil {
+			return "", fmt.Errorf("send alarm %s: %w", r.SNS.MessageID, err)
+		}
+	}
+	return fmt.Sprintf("alarms: %d sent", len(recs)), nil
 }
 
 // ingest reads each stored message. Errors are collected rather than stopping
