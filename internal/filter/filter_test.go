@@ -135,6 +135,16 @@ func TestLocationClassifier(t *testing.T) {
 		{"remote pinned to US city", ats.Job{Location: "NYC, New York", WorkplaceType: "remote"}, ClassC},
 		{"worldwide plus a country", ats.Job{Location: "United States of America; Worldwide - Remote"}, ClassA},
 		{"global anywhere", ats.Job{Location: "Global Anywhere; Remote - EMEA"}, ClassA},
+		// 2026-10-23: a region plus a place in it is judged by the place
+		// (Fivetran, "Bengaluru, India; APAC"); a title naming a place abroad too.
+		{"apac office in india", ats.Job{Location: "Bengaluru, India; APAC"}, ClassC},
+		{"apac remote pinned to a country", ats.Job{Location: "Remote - Singapore, APAC"}, ClassB},
+		{"apac and emea", ats.Job{Location: "Remote - EMEA, APAC"}, ClassA},
+		{"apac with taipei", ats.Job{Location: "APAC (Taipei, Singapore)"}, ClassB},
+		{"place in title", ats.Job{Title: "Backend Engineer (India)", Location: "Bengaluru"}, ClassC},
+		{"place in title, remote", ats.Job{Title: "Senior Engineer, Japan", Location: "Remote"}, ClassB},
+		{"us in title", ats.Job{Title: "Software Engineer - US", Location: "Remote, Global"}, ClassB},
+		{"chinese place in title", ats.Job{Title: "後端工程師（新加坡）", Location: ""}, ClassC},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
