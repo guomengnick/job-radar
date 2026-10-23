@@ -308,8 +308,12 @@ func BuildBatchSummary(b store.Batch, results []batchResult, u assess.Usage) str
 		}
 		fmt.Fprintf(&s, "\n<b>%s：%d</b>\n", v.head, len(group))
 		for _, j := range group {
-			fmt.Fprintf(&s, "[%d] <a href=\"%s\">%s</a>｜%s｜%s\n", j.a.Score, e(j.item.URL), e(titleOr(j.a.JobTitle, j.item.Title)),
+			fmt.Fprintf(&s, "[%d] <a href=\"%s\">%s</a>｜%s｜%s", j.a.Score, e(j.item.URL), e(titleOr(j.a.JobTitle, j.item.Title)),
 				e(j.a.Company), e(truncate(j.a.Reason, 40)))
+			if apply := ApplyURL(j.item.URL, j.a); apply != "" {
+				fmt.Fprintf(&s, "｜<a href=\"%s\">帶入應徵</a>", e(apply))
+			}
+			s.WriteString("\n")
 		}
 	}
 	for _, g := range []struct {

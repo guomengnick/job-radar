@@ -103,7 +103,39 @@ func BuildAssessment(pageURL string, j assess.Assessment) string {
 		fmt.Fprintf(&b, "✉️ 推薦信對應句（點一下複製）：\n<code>%s</code>\n", e(j.LetterLine))
 	}
 	if j.Reason != "" {
-		fmt.Fprintf(&b, "💬 %s", e(j.Reason))
+		fmt.Fprintf(&b, "💬 %s\n", e(j.Reason))
+	}
+	if apply := ApplyURL(pageURL, j); apply != "" {
+		fmt.Fprintf(&b, "👉 <a href=\"%s\">看職缺</a>｜<a href=\"%s\">帶入應徵</a>", e(pageURL), e(apply))
 	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// ApplyLinkMinScore is the lowest score whose reply carries the 帶入應徵 link.
+const ApplyLinkMinScore = 70
+
+// letterLineMax bounds the sentence carried in the link; the prompt asks for
+// 60 characters, and a link stays well under what browsers and Telegram take.
+const letterLineMax = 120
+
+// ApplyURL is a 104 job page that opens its apply form (104's own
+// ?apply=form) with a fragment the extension reads: which résumé version to
+// choose and the cover-letter sentence. The fragment never reaches 104's
+// server. It returns "" for other sites and for scores below
+// ApplyLinkMinScore. The extension only fills the form; the user reviews it
+// and presses 確認送出.
+func ApplyURL(pageURL string, j assess.Assessment) string {
+	m := job104.FindStringSubmatch(pageURL)
+	if m == nil || j.Score < ApplyLinkMinScore {
+		return ""
+	}
+	cv := j.Resume
+	if j.AddMLLine {
+		cv += "+ML"
+	}
+	v := url.Values{"cv": {cv}}
+	if line := strings.TrimSpace(j.LetterLine); line != "" {
+		v.Set("line", truncate(line, letterLineMax))
+	}
+	return "https://www.104.com.tw/job/" + m[1] + "?apply=form#radar-apply?" + v.Encode()
 }

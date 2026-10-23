@@ -149,6 +149,29 @@ func TestSubmitAndCheckBatch(t *testing.T) {
 	}
 }
 
+func TestBatchSummaryApplyLinks(t *testing.T) {
+	b := store.Batch{Model: "claude-opus-5-5", Items: []store.BatchItem{{Key: "104#aaa01"}, {Key: "104#bbb01"}, {Key: "104#ccc01"}}}
+	item := func(code string) store.BatchItem {
+		return store.BatchItem{Key: "104#" + code, URL: "https://www.104.com.tw/job/" + code}
+	}
+	msg := BuildBatchSummary(b, []batchResult{
+		{item: item("aaa01"), a: assess.Assessment{JobTitle: "後端", Score: 82, Verdict: "建議投", Resume: "A"}},
+		{item: item("bbb01"), a: assess.Assessment{JobTitle: "平台", Score: 72, Verdict: "可考慮", Resume: "B", AddMLLine: true}},
+		{item: item("ccc01"), a: assess.Assessment{JobTitle: "資料", Score: 69, Verdict: "可考慮", Resume: "B"}},
+	}, assess.Usage{})
+	for _, want := range []string{
+		`<a href="https://www.104.com.tw/job/aaa01?apply=form#radar-apply?cv=A">帶入應徵</a>`,
+		`[72] <a href="https://www.104.com.tw/job/bbb01">平台</a>｜｜｜<a href="https://www.104.com.tw/job/bbb01?apply=form#radar-apply?cv=B%2BML">帶入應徵</a>` + "\n",
+	} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("summary missing %q:\n%s", want, msg)
+		}
+	}
+	if !strings.HasSuffix(msg, `[69] <a href="https://www.104.com.tw/job/ccc01">資料</a>｜｜`) {
+		t.Errorf("below the threshold, no link:\n%s", msg)
+	}
+}
+
 func TestSubmitPagesAllLeftOut(t *testing.T) {
 	ctx := context.Background()
 	d, _, st, _ := setup(t)
