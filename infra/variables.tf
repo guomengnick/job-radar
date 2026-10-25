@@ -7,11 +7,15 @@ variable "region" {
 variable "alert_email" {
   description = "Receives alarm and budget emails (confirm the SNS subscription email once)."
   type        = string
+  # The repository is public, and so are its Actions logs.
+  sensitive = true
 }
 
 variable "telegram_chat_id" {
   description = "Chat that receives the daily digest."
   type        = string
+  # The repository is public, and so are its Actions logs.
+  sensitive = true
 }
 
 variable "telegram_token_param" {

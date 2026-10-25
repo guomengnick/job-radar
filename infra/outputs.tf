@@ -20,6 +20,13 @@ output "mail_bucket" {
 }
 
 output "clip_url" {
-  description = "Paste into the 送到雷達 extension's options."
+  description = "Paste into the 送到雷達 extension's options (terraform output -raw clip_url)."
   value       = aws_lambda_function_url.clip.function_url
+  # Public, but gated by the secret; kept out of the public Actions logs.
+  sensitive = true
+}
+
+output "github_roles" {
+  description = "Repository variables AWS_PLAN_ROLE_ARN and AWS_DEPLOY_ROLE_ARN (see DEPLOY.zh-TW.md)."
+  value       = { for k, r in aws_iam_role.github : k => r.arn }
 }
