@@ -321,7 +321,8 @@ func (h *handler) clip(ctx context.Context, r events.LambdaFunctionURLRequest) e
 	}
 	model := h.model(vals[0])
 	n := notify.Telegram{Token: vals[2], ChatID: mustEnv("TELEGRAM_CHAT_ID")}
-	j, err := app.Clip(ctx, h.deps, model, n, vals[1], page)
+	archive := s3Archive{client: h.s3, bucket: mustEnv("PAGES_BUCKET")}
+	j, err := app.Clip(ctx, h.deps, model, n, archive, vals[1], page)
 	switch {
 	case errors.Is(err, app.ErrBadClip):
 		return reply(http.StatusBadRequest, err.Error())
@@ -424,14 +425,13 @@ type s3Archive struct {
 	bucket string
 }
 
-func (a s3Archive) SavePages(ctx context.Context, name string, pages []assess.Page) error {
-	body, err := json.Marshal(pages)
+func (a s3Archive) Save(ctx context.Context, name string, v any) error {
+	body, err := json.Marshal(v)
 	if err != nil {
 		return err
 	}
-	key := "batches/" + name
 	_, err = a.client.PutObject(ctx, &s3.PutObjectInput{
-		Bucket: &a.bucket, Key: &key, Body: bytes.NewReader(body), ContentType: ptr("application/json"),
+		Bucket: &a.bucket, Key: &name, Body: bytes.NewReader(body), ContentType: ptr("application/json"),
 	})
 	return err
 }

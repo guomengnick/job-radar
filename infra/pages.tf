@@ -1,7 +1,9 @@
-# The batch button's pages. Each batch is kept as sent, so it can be judged
-# again (a new rubric, a failed request) without reopening the tabs. Job
-# pages are public, but which ones the user opened is personal: private,
-# encrypted, and expired after 30 days, as the mail is.
+# Job pages the model judged. batches/ keeps each batch as sent, so it can
+# be judged again (a new rubric, a failed request) without reopening the
+# tabs: 30 days, as the mail. jd/ keeps each judged page on its own, which
+# its judgement points at: a year, so judgements can be checked against the
+# posting and used as an evaluation set. Job pages are public, but which
+# ones the user opened is personal: private and encrypted.
 resource "aws_s3_bucket" "pages" {
   bucket = "job-radar-pages-${data.aws_caller_identity.me.account_id}"
 }
@@ -26,11 +28,24 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "pages" {
 resource "aws_s3_bucket_lifecycle_configuration" "pages" {
   bucket = aws_s3_bucket.pages.id
   rule {
-    id     = "expire-pages"
+    id     = "expire-batches"
     status = "Enabled"
-    filter {}
+    filter {
+      prefix = "batches/"
+    }
     expiration {
       days = 30
+    }
+  }
+
+  rule {
+    id     = "expire-judged-pages"
+    status = "Enabled"
+    filter {
+      prefix = "jd/"
+    }
+    expiration {
+      days = 365
     }
   }
 }
