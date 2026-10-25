@@ -111,8 +111,9 @@ func BuildAssessment(pageURL string, j assess.Assessment) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-// ApplyLinkMinScore is the lowest score whose reply carries the 帶入應徵 link.
-const ApplyLinkMinScore = 70
+// ApplyLinkMinScore is the lowest score whose reply carries the 帶入應徵
+// link: 可考慮 and up. The user reads the form before sending it anyway.
+const ApplyLinkMinScore = 55
 
 // letterLineMax bounds the sentence carried in the link; the prompt asks for
 // 60 characters, and a link stays well under what browsers and Telegram take.

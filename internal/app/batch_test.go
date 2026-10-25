@@ -157,7 +157,7 @@ func TestBatchSummaryApplyLinks(t *testing.T) {
 	msg := BuildBatchSummary(b, []batchResult{
 		{item: item("aaa01"), a: assess.Assessment{JobTitle: "後端", Score: 82, Verdict: "建議投", Resume: "A"}},
 		{item: item("bbb01"), a: assess.Assessment{JobTitle: "平台", Score: 72, Verdict: "可考慮", Resume: "B", AddMLLine: true}},
-		{item: item("ccc01"), a: assess.Assessment{JobTitle: "資料", Score: 69, Verdict: "可考慮", Resume: "B"}},
+		{item: item("ccc01"), a: assess.Assessment{JobTitle: "資料", Score: 54, Verdict: "不建議", Resume: "B"}},
 	}, assess.Usage{})
 	for _, want := range []string{
 		`<a href="https://www.104.com.tw/job/aaa01?apply=form#radar-apply?cv=A">帶入應徵</a>`,
@@ -167,7 +167,7 @@ func TestBatchSummaryApplyLinks(t *testing.T) {
 			t.Errorf("summary missing %q:\n%s", want, msg)
 		}
 	}
-	if !strings.HasSuffix(msg, `[69] <a href="https://www.104.com.tw/job/ccc01">資料</a>｜｜`) {
+	if !strings.HasSuffix(msg, `[54] <a href="https://www.104.com.tw/job/ccc01">資料</a>｜｜`) {
 		t.Errorf("below the threshold, no link:\n%s", msg)
 	}
 }
