@@ -42,9 +42,10 @@ type EvalRow struct {
 
 var wantVerdicts = map[string]string{"投": "建議投", "建議投": "建議投", "看": "可考慮", "可考慮": "可考慮", "不": "不建議", "不建議": "不建議"}
 
-// ParseLabels reads a CSV with the header key,want,note. A row whose want is
-// neither a verdict nor a score from 0 to 100 is an error, so a typo does not
-// quietly count as a disagreement.
+// ParseLabels reads a CSV with the header key,want,note. A row with no want
+// yet is skipped, so a list can be labelled bit by bit; a want that is
+// neither a verdict nor a score from 0 to 100 is an error, so a typo does
+// not quietly count as a disagreement.
 func ParseLabels(r io.Reader) ([]EvalCase, error) {
 	cr := csv.NewReader(r)
 	cr.FieldsPerRecord = -1 // the note may be left off
@@ -63,6 +64,9 @@ func ParseLabels(r io.Reader) ([]EvalCase, error) {
 		c := EvalCase{Key: jobKey(strings.TrimSpace(row[0])), Want: strings.TrimSpace(row[1])}
 		if len(row) > 2 {
 			c.Note = strings.TrimSpace(row[2])
+		}
+		if c.Want == "" {
+			continue
 		}
 		if v, ok := wantVerdicts[c.Want]; ok {
 			c.Want = v
