@@ -40,6 +40,8 @@ locals {
       cron = "cron(0 7 ? * SUN *)", fn = "sync", input = { task = "sync-boards", ats = a }
     } },
     { digest = { cron = "cron(40 8 * * ? *)", fn = "digest", input = { task = "digest" } } },
+    # Sunday evening: the week in one message, on the digest function.
+    { weekly = { cron = "cron(0 20 ? * SUN *)", fn = "digest", input = { task = "weekly" } } },
     # A run with no open batch reads one index query and stops.
     { batch-check = { cron = "rate(10 minutes)", fn = "batch", input = { task = "batch-check" } } },
     # After the 08:40 digest: the day's class A board jobs go to the model.

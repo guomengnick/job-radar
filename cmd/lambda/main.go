@@ -3,6 +3,7 @@
 //
 //	{"task":"scan","ats":"greenhouse"}
 //	{"task":"digest"}
+//	{"task":"weekly"}
 //	{"task":"sync-boards","ats":"lever"}
 //
 // ingest is invoked by S3 when SES stores a message, and clip through its
@@ -152,6 +153,18 @@ func (h *handler) handle(ctx context.Context, raw json.RawMessage) (any, error) 
 		expected := strings.Split(envOr("EXPECTED_ATS", "greenhouse,lever,ashby"), ",")
 		_, err = app.Digest(ctx, h.deps, n, app.DigestOptions{ExpectedATS: expected, DryRun: e.DryRun, Location: taipei, Version: h.commit})
 		return "digest sent", err
+	case "weekly":
+		token, err := h.secret(ctx, mustEnv("TELEGRAM_TOKEN_PARAM"))
+		if err != nil {
+			return "", err
+		}
+		n := notify.Telegram{Token: token, ChatID: mustEnv("TELEGRAM_CHAT_ID")}
+		taipei, err := time.LoadLocation("Asia/Taipei")
+		if err != nil {
+			taipei = time.FixedZone("UTC+8", 8*60*60)
+		}
+		_, err = app.Weekly(ctx, h.deps, n, taipei)
+		return "weekly sent", err
 	case "batch-check":
 		return h.checkBatches(ctx)
 	case "board-assess":
