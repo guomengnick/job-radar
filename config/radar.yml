@@ -212,3 +212,7 @@ assess:
   # model's default; the batch summary shows what each batch cost.
   model: claude-opus-5-5
   effort: medium
+  # After the digest, the day's new class A board jobs (remote, open to
+  # Taiwan), best keyword score first, go to the model as one batch. About
+  # US$0.02 each, so 10 a day is at most about US$6 a month. 0 turns it off.
+  board_daily_max: 10

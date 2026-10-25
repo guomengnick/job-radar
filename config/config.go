@@ -32,6 +32,9 @@ type AssessRules struct {
 	// Effort is how hard the model thinks: low, medium, high, xhigh or max;
 	// empty leaves the model's default.
 	Effort string `yaml:"effort"`
+	// BoardDailyMax caps how many new class A board jobs (remote, open to
+	// Taiwan) go to the model each day after the digest; 0 turns it off.
+	BoardDailyMax int `yaml:"board_daily_max"`
 }
 
 type SpringboardRules struct {
@@ -136,6 +139,9 @@ func (c *Config) validate() error {
 	}
 	if c.Assess.Model == "" {
 		return fmt.Errorf("config: assess.model must be set")
+	}
+	if c.Assess.BoardDailyMax < 0 {
+		return fmt.Errorf("config: assess.board_daily_max must be 0 or more")
 	}
 	switch c.Assess.Effort {
 	case "", "low", "medium", "high", "xhigh", "max":
