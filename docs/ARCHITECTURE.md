@@ -134,5 +134,6 @@ Claude 另外計費（Anthropic）：單頁約 0.02～0.04 美元，批次半價
 | 送到雷達：單頁評分、批次評分、帶入應徵 | ✅ 2026-10-21～23 |
 | 告警到 Telegram、版本與部署防呆、早上提醒、JD 保存、評估集、國外職缺 AI 評分 | ✅ 2026-10-23～25 |
 | DLQ 與錯誤分級 | 未做（下一個實作題） |
-| GitHub Actions 用 OIDC 自動部署、測試環境 | 未做（CI 已有：測試加上 terraform validate） |
+| GitHub Actions：PR 自動 plan、按鈕加核准部署（OIDC，沒有存 AWS 金鑰） | 程式已寫，一次性設定後啟用（見 DEPLOY） |
+| 測試環境 | 未做 |
 | Workday | 未做 |
