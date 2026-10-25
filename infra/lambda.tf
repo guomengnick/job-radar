@@ -12,6 +12,7 @@ locals {
       # call takes 10–60 seconds, submitting a batch a few.
       clip = { timeout = 120, memory = 256, retries = 0 }
       # Every ten minutes: sends the summary of each batch that has ended.
+      # Once a day after the digest: sends the day's board jobs as a batch.
       batch = { timeout = 120, memory = 256, retries = 0 }
       # Forwards each alarm from the SNS topic to Telegram. SNS invokes it
       # asynchronously; Lambda's two retries ride out a Telegram hiccup.
@@ -38,7 +39,13 @@ locals {
       BATCH_RULES_PARAM    = var.batch_rules_param
       PAGES_BUCKET         = aws_s3_bucket.pages.bucket
     })
-    batch = merge(local.telegram_env, { ANTHROPIC_KEY_PARAM = var.anthropic_key_param })
+    # The scan keeps the pages of the board jobs it will notify.
+    scan = { PAGES_BUCKET = aws_s3_bucket.pages.bucket }
+    batch = merge(local.telegram_env, {
+      ANTHROPIC_KEY_PARAM  = var.anthropic_key_param
+      ASSESS_PROFILE_PARAM = var.assess_profile_param
+      PAGES_BUCKET         = aws_s3_bucket.pages.bucket
+    })
     alarm = local.telegram_env
   }
 }

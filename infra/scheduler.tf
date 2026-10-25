@@ -42,6 +42,8 @@ locals {
     { digest = { cron = "cron(40 8 * * ? *)", fn = "digest", input = { task = "digest" } } },
     # A run with no open batch reads one index query and stops.
     { batch-check = { cron = "rate(10 minutes)", fn = "batch", input = { task = "batch-check" } } },
+    # After the 08:40 digest: the day's class A board jobs go to the model.
+    { board-assess = { cron = "cron(50 8 * * ? *)", fn = "batch", input = { task = "board-assess" } } },
   )
 }
 
