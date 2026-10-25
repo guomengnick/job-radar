@@ -17,6 +17,7 @@ func TestParseLabels(t *testing.T) {
 		"https://www.104.com.tw/job/bbb01?jobsource=match_mail,看,\n" +
 		"104#ccc01,不\n" +
 		"104#ddd01,72,差不多這個分數\n" +
+		"104#eee01,,還沒標\n" +
 		",,\n"
 	got, err := ParseLabels(strings.NewReader(in))
 	if err != nil {

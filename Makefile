@@ -1,4 +1,4 @@
-.PHONY: test vet build lambda plan apply check-main deployed eval backfill-jd clean extension-config
+.PHONY: test vet build lambda plan apply check-main deployed eval backfill-jd profile clean extension-config
 
 test:
 	go test -race ./...
@@ -52,6 +52,11 @@ eval:
 # Point judgements made before pages were kept at their page (once).
 backfill-jd:
 	go run ./cmd/radar backfill-jd
+
+# Replace the scoring profile in SSM with a local file, after a diff and a
+# yes: make profile PROFILE=path/profile.md. No deploy needed.
+profile:
+	@./scripts/profile.sh "$(PROFILE)"
 
 clean:
 	rm -rf build
