@@ -2,7 +2,9 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -32,6 +34,26 @@ type memArchive struct {
 	names []string
 	saved map[string]any
 	fail  bool
+}
+
+// Load and List make it a PageSource too, reading back what Save kept.
+func (m *memArchive) Load(_ context.Context, name string, v any) error {
+	saved, ok := m.saved[name]
+	if !ok {
+		return errors.New("no such page")
+	}
+	b, _ := json.Marshal(saved)
+	return json.Unmarshal(b, v)
+}
+
+func (m *memArchive) List(_ context.Context, prefix string) ([]string, error) {
+	var out []string
+	for _, n := range m.names {
+		if strings.HasPrefix(n, prefix) && !slices.Contains(out, n) {
+			out = append(out, n)
+		}
+	}
+	return out, nil
 }
 
 func (m *memArchive) Save(_ context.Context, name string, v any) error {
