@@ -1,0 +1,102 @@
+name: deploy
+
+# Deploys main to AWS when the user presses "Run workflow". The plan job
+# shows what will change; the apply job is in the "production"
+# environment, which waits for the user's approval and runs only from main
+# (both set in the repository's environment settings). apply plans again
+# from the same commit and stops if the summary differs from the one that
+# was approved. The last step prints which commit each function runs.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  TF_VAR_alert_email: ${{ secrets.TF_VAR_ALERT_EMAIL }}
+  TF_VAR_telegram_chat_id: ${{ secrets.TF_VAR_TELEGRAM_CHAT_ID }}
+  TF_VAR_mail_domain: ${{ secrets.TF_VAR_MAIL_DOMAIN }}
+
+jobs:
+  plan:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      summary: ${{ steps.plan.outputs.summary }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - run: make lambda
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_PLAN_ROLE_ARN }}
+          aws-region: ap-southeast-2
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_wrapper: false
+      - id: plan
+        working-directory: infra
+        run: |
+          terraform init -input=false -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+            -backend-config="key=job-radar/terraform.tfstate" -backend-config="region=ap-southeast-2" \
+            -backend-config="encrypt=true" -backend-config="use_lockfile=true"
+          terraform plan -input=false -lock=false -no-color -out=tfplan > plan.txt || { tail -40 plan.txt; exit 1; }
+          summary=$(grep -E '^(Plan:|No changes)' plan.txt | head -1)
+          echo "summary=$summary" >> "$GITHUB_OUTPUT"
+          {
+            echo "### 要部署 ${GITHUB_SHA::7}"
+            echo
+            echo "$summary"
+            echo
+            echo '```'
+            terraform show -no-color tfplan | grep -E '^  # ' || true
+            echo '```'
+            echo
+            echo "看過沒有 destroy、replace 不對的東西，再到 apply 那一步按 Approve。"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  apply:
+    needs: plan
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - run: make lambda
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ap-southeast-2
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_wrapper: false
+      - name: terraform apply
+        working-directory: infra
+        env:
+          APPROVED: ${{ needs.plan.outputs.summary }}
+        run: |
+          terraform init -input=false -backend-config="bucket=${{ vars.TF_STATE_BUCKET }}" \
+            -backend-config="key=job-radar/terraform.tfstate" -backend-config="region=ap-southeast-2" \
+            -backend-config="encrypt=true" -backend-config="use_lockfile=true"
+          terraform plan -input=false -no-color -out=tfplan > plan.txt || { tail -40 plan.txt; exit 1; }
+          summary=$(grep -E '^(Plan:|No changes)' plan.txt | head -1)
+          if [ "$summary" != "$APPROVED" ]; then
+            echo "::error::The plan changed since it was approved: '$APPROVED' then, '$summary' now. Run the workflow again."
+            exit 1
+          fi
+          terraform apply -input=false -no-color tfplan > apply.txt || { tail -40 apply.txt; exit 1; }
+          grep -E '^Apply complete' apply.txt
+      - name: what is deployed
+        run: |
+          ./scripts/deployed.sh | tee deployed.txt
+          { echo "### 部署完成"; echo; echo '```'; cat deployed.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
