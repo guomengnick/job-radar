@@ -198,6 +198,18 @@ AWS_PROFILE=radar make eval LABELS=../履歷相關/評分標準答案.csv PROFIL
 
 每個職缺會印一行：✅／❌、你的判斷、原本的分數 → 這次的分數、職稱，最後一行是「跟你的判斷一致：原本 x/n → 這次 y/n」和花費。每個職缺一次模型呼叫，約 0.03 美元。`want` 空著的那幾行會跳過，可以邊看邊標。
 
+不想填 CSV 的話：每則評分下面有 **👍 投／🤔 看／👎 不** 三個按鈕（批次總表下面是分數最高的 8 個），按一下就記下你的判斷。按鈕要先接上一次（部署之後）：
+
+```bash
+AWS_PROFILE=radar make telegram-webhook
+```
+
+之後用 `LABELS=telegram` 拿你按過的那些來評估：
+
+```bash
+AWS_PROFILE=radar make eval LABELS=telegram PROFILE=../履歷相關/job-radar_評分檔案.md
+```
+
 4. 草稿比較好，就換掉 SSM 裡的評分檔案。它會先列出差異，輸入 `yes` 才更新，不用部署：
 
 ```bash
