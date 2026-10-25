@@ -13,6 +13,11 @@
 //
 //	{"task":"batch-check"}
 //
+// and once a day, after the digest, sends the day's class A board jobs to
+// the model as a batch (the scan keeps their pages):
+//
+//	{"task":"board-assess"}
+//
 // alarm is subscribed to the alerts SNS topic and forwards each CloudWatch
 // alarm to Telegram; the topic's email subscription stays as the fallback.
 package main
@@ -92,7 +97,13 @@ func main() {
 		mustEnv("TABLE_BOARDS"), mustEnv("TABLE_JOBS"), mustEnv("TABLE_RUNS"))
 	// EMF metric lines go to stdout, where CloudWatch Logs extracts them.
 	params := ssm.NewFromConfig(awsCfg)
-	h := &handler{deps: app.NewDeps(cfg, st, log, os.Stdout), s3: s3.NewFromConfig(awsCfg), log: log, commit: commit,
+	deps := app.NewDeps(cfg, st, log, os.Stdout)
+	s3c := s3.NewFromConfig(awsCfg)
+	// The scan keeps the pages of the board jobs it will notify.
+	if b := os.Getenv("PAGES_BUCKET"); b != "" {
+		deps.Pages = pages.S3{Client: s3c, Bucket: b}
+	}
+	h := &handler{deps: deps, s3: s3c, log: log, commit: commit,
 		secret: func(ctx context.Context, name string) (string, error) {
 			out, err := params.GetParameter(ctx, &ssm.GetParameterInput{Name: &name, WithDecryption: ptr(true)})
 			if err != nil {
@@ -141,6 +152,8 @@ func (h *handler) handle(ctx context.Context, raw json.RawMessage) (any, error) 
 		return "digest sent", err
 	case "batch-check":
 		return h.checkBatches(ctx)
+	case "board-assess":
+		return h.judgeBoardJobs(ctx)
 	case "sync-boards":
 		added, total, err := app.SyncBoards(ctx, h.deps, e.ATS, "")
 		return fmt.Sprintf("%s: %d listed, %d new", e.ATS, total, added), err
@@ -373,6 +386,23 @@ func (h *handler) batch(ctx context.Context, r events.LambdaFunctionURLRequest) 
 	out, _ := json.Marshal(receipt)
 	return events.LambdaFunctionURLResponse{StatusCode: http.StatusAccepted, Body: string(out),
 		Headers: map[string]string{"content-type": "application/json"}}
+}
+
+// judgeBoardJobs sends the class A board jobs first seen in the last day
+// to the model; the ten-minute batch-check sends the summary.
+func (h *handler) judgeBoardJobs(ctx context.Context) (string, error) {
+	max := h.deps.Cfg.Assess.BoardDailyMax
+	if max == 0 {
+		return "board judging is off (assess.board_daily_max)", nil
+	}
+	vals, err := h.params(ctx, "ANTHROPIC_KEY_PARAM", "ASSESS_PROFILE_PARAM", "TELEGRAM_TOKEN_PARAM")
+	if err != nil {
+		return "", err
+	}
+	n := notify.Telegram{Token: vals[2], ChatID: mustEnv("TELEGRAM_CHAT_ID")}
+	kept := pages.S3{Client: h.s3, Bucket: mustEnv("PAGES_BUCKET")}
+	r, err := app.JudgeBoardJobs(ctx, h.deps, h.model(vals[0]), n, kept, vals[1], h.deps.Now().Add(-24*time.Hour), max)
+	return fmt.Sprintf("board jobs: %d sent, batch %s", r.Submitted, r.BatchID), err
 }
 
 // checkBatches sends the summary of each open batch that has ended. Most
