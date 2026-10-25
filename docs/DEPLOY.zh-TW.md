@@ -172,6 +172,32 @@ make deployed
 aws cloudwatch set-alarm-state --alarm-name job-radar-alarm-errors --state-value ALARM --state-reason "手動測試"
 ```
 
+### 評分準不準：評估集
+
+每個評過分的 JD 都存在 S3 pages 桶的 `jd/`（保存一年），評分紀錄的 `jd` 欄位指向它。拿它們加上你自己的判斷，就能在改評分檔案**之前**先看效果。
+
+1. 部署 2026-10-25 之後的版本後，先執行一次，把更早評過的職缺補上 JD（只找得到 30 天內批次送出的）：
+
+```bash
+AWS_PROFILE=radar make backfill-jd
+```
+
+2. 在 repo 以外建一個 CSV，例如 `履歷相關/評分標準答案.csv`。第一行固定是 `key,want,note`；`key` 填職缺網址或 `104#代碼`；`want` 填你的判斷：`投`、`看`、`不`，或一個分數：
+
+```
+key,want,note
+https://www.104.com.tw/job/abc12,投,自家產品的後端
+104#def34,不,其實是 MES
+```
+
+3. 用現在 SSM 裡的評分檔案重評一次，或加上 `PROFILE=` 測一份草稿：
+
+```bash
+AWS_PROFILE=radar make eval LABELS=../履歷相關/評分標準答案.csv PROFILE=../履歷相關/job-radar_評分檔案.md
+```
+
+每個職缺會印一行：✅／❌、你的判斷、原本的分數 → 這次的分數、職稱，最後一行是「跟你的判斷一致：原本 x/n → 這次 y/n」和花費。每個職缺一次模型呼叫，約 0.03 美元。草稿比較好，再用 `put-parameter` 換掉 SSM 裡的評分檔案。
+
 ## 6. 第一次載入看板，並建立基準線
 
 ```bash
