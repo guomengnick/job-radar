@@ -23,17 +23,32 @@
 
 ```
 EventBridge Scheduler（Asia/Taipei）
-  08:00 ─► Lambda job-radar-scan  {"task":"scan","ats":"greenhouse|lever|ashby"}
-              │ 每家 API 一個限速器；逾時 20 秒；429、5xx、網路錯誤重試 2 次（退避加隨機延遲，遵守 Retry-After）
-              ├─► DynamoDB job-radar-boards  看板狀態
-              ├─► DynamoDB job-radar-jobs    通過職稱篩選的職缺（用條件寫入判斷是不是新的）
-              ├─► DynamoDB job-radar-runs    每次執行的統計（保留 90 天）
-              └─► stdout 輸出 EMF 指標 ─► CloudWatch 指標、儀表板、告警
-  08:40 ─► Lambda job-radar-digest ─► 讀 runs 和待通知的 jobs ─► Telegram
-  週日 07:00 ─► Lambda job-radar-sync ─► 下載公開看板清單 ─► 把新看板加進 boards
+  08:00       ─► scan ×3（greenhouse｜lever｜ashby）
+                  │ 每家 API 一個限速器；逾時 20 秒；429、5xx、網路錯誤重試 2 次（退避加隨機延遲，遵守 Retry-After）
+                  ├─► DynamoDB job-radar-boards  看板狀態
+                  ├─► DynamoDB job-radar-jobs    通過職稱篩選的職缺（用條件寫入判斷是不是新的）
+                  ├─► DynamoDB job-radar-runs    每次執行的統計（保留 90 天）
+                  ├─► S3 pages jd/               會通知的職缺頁面（給 AI 評分用）
+                  └─► stdout 輸出 EMF 指標 ─► CloudWatch 指標、儀表板、告警
+  08:40       ─► digest ─► 讀 runs、待通知的 jobs、沒送出的 104 職缺 ─► Telegram
+  08:50       ─► batch（board-assess）─► 當天新的 A 類國外職缺 ─► Claude 批次評分
+  每 10 分鐘  ─► batch（batch-check）─► 批次做完了 → 存評分 → Telegram 總表
+  週日 07:00  ─► sync ×3 ─► 下載公開看板清單 ─► 把新看板加進 boards
+
+104 配對信 ─► Outlook 轉寄 ─► SES 收信 ─► S3 mail 桶 ─► ingest ─► jobs（職缺、聯絡）
+
+瀏覽器擴充功能「送到雷達」（使用者按了才讀頁面）
+  ─► Function URL（公開網址，靠共享密鑰）─► clip
+        POST /       這一頁 ─► Claude ─► Telegram 評分；jobs 存 assess#；S3 存 jd/
+        GET  /jobs   某天起的 104 職缺，讓擴充功能一次開啟
+        POST /batch  開著的 104 分頁 ─► Claude Message Batch（半價）─► 由 batch-check 收尾
+  Telegram「帶入應徵」連結 ─► 104 應徵視窗 ─► 擴充功能選好履歷、寫好推薦信（送出由人按）
+
+CloudWatch 告警 ─► SNS ─► Email，以及 alarm 函式 ─► Telegram
+秘密與個人資料 ─► SSM Parameter Store（bot token、Claude 金鑰、評分檔案、clip 密鑰、批次規則）
 ```
 
-三個 Lambda 用同一個 Go 執行檔，但各自有不同的逾時設定和 IAM 權限。
+7 個 Lambda（scan、digest、sync、ingest、clip、batch、alarm）用同一個 Go 執行檔，但各自有不同的觸發方式、逾時設定和 IAM 權限。
 
 ## 3. 元件、用意與權衡
 
@@ -47,8 +62,14 @@ EventBridge Scheduler（Asia/Taipei）
 | Telegram | 免費，一個 POST 就送到手機 | 需要自己建 Bot |
 | Terraform | 一個指令建立或刪除整套環境；也是職缺 JD 上常見的要求 | 比 SAM 繁瑣 |
 | 不放進 VPC | 用到的都是公開端點，靠 IAM 驗證，省下 NAT 每月 30 多美元 | 面試時要能說明理由（就是上面這句） |
+| SES 收信＋S3 | 104 不給 API，只會寄推薦信；收信是不碰 104 網頁的唯一來源 | 要自己的網域、Route 53 和 DKIM；Outlook 轉寄會破壞 104 的 DKIM 簽章，改看 Microsoft 驗證的結果 |
+| Chrome 擴充功能（MV3） | 104 網頁有 Cloudflare 擋機器人；由使用者自己的瀏覽器讀他正在看的頁面，不繞過 | 只在裝了擴充功能的電腦能用；沒有「在背景自動讀網頁」 |
+| Function URL＋共享密鑰 | 擴充功能直接呼叫，不需要 API Gateway | 網址是公開的，密鑰是唯一的門；沒有使用者帳號 |
+| Claude：一個工具、固定 JSON 格式 | 職缺頁面是不可信的輸入；模型只能呼叫「記錄評分」這個工具回答，每個值都會檢查，它不能做任何動作 | 每頁約 0.02～0.04 美元；結果是判斷不是事實，所以附上原文引用，JD 也存一年供對照 |
+| Message Batches | 半價，可以一次送幾十頁 | 最久 24 小時；Anthropic 不會主動通知，所以每 10 分鐘輪詢一次 |
+| SNS → alarm 函式 → Telegram | 告警直接到手機，Email 當備援 | 多一個函式；它自己壞了，要靠 Email 才知道 |
 
-**Go 程式的分層**：`ats`（每家 ATS 一個轉接器）→ `fetch`（HTTP 規則）→ `filter`（篩選規則）→ `store`（介面，有本機 JSON 和 DynamoDB 兩種實作）→ `app`（用例）。CLI 和 Lambda 呼叫同一份 `app`，所以本機能跑，就代表雲端的邏輯也是對的。只用標準庫加官方 SDK，沒有用 Web 框架或 ORM。
+**Go 程式的分層**：`ats`（每家 ATS 一個轉接器）→ `fetch`（HTTP 規則）→ `filter`（篩選規則）→ `store`（介面，有本機 JSON 和 DynamoDB 兩種實作）→ `app`（用例）。104 的信由 `mailin`（原始信件、寄件人檢查）和 `alert104`（職缺與聯絡）讀；`assess` 呼叫 Claude；`pages` 存取 S3 裡的頁面；`version` 說明正在跑的是哪個 commit。CLI 和 Lambda 呼叫同一份 `app`，所以本機能跑，就代表雲端的邏輯也是對的。只用標準庫加官方 SDK，沒有用 Web 框架或 ORM。
 
 ## 4. 資料模型
 
@@ -90,21 +111,28 @@ EventBridge Scheduler（Asia/Taipei）
 
 ## 7. 安全
 
-- 每個函式有自己的 IAM 角色：只有 digest 能讀 token；只有 scan 和 sync 能寫 boards。
-- Token 是手動建立的 SecureString，不會出現在 Terraform state 裡。發生錯誤時，訊息裡的 token 會被遮掉。
+- 每個函式有自己的 IAM 角色，只拿得到自己要的：只有要發 Telegram 的函式能讀 bot token；只有 scan 和 sync 能寫 boards；只有 clip 能讀 clip 密鑰；alarm 只能讀 bot token。
+- Token、Claude 金鑰、評分檔案、clip 密鑰都是手動建立的 SecureString，不會出現在 Terraform state 裡。發生錯誤時，訊息裡的 token 會被遮掉。
+- clip 的網址是公開的：沒有密鑰的請求在讀任何東西之前就被拒絕；太舊的擴充功能收到 426。
+- 職缺頁面是不可信的輸入：模型只能呼叫「記錄評分」工具，Telegram 訊息裡的每個欄位都會跳脫（escape）。
+- 個人資料（評分檔案、履歷名稱、推薦信）不在這個公開的 repo：分別在 SSM 和擴充功能的本機儲存。
 - Terraform state 存在私人的 S3 bucket；`terraform.tfvars` 和 `backend.hcl` 都不提交到 git。
 
 ## 8. 費用（估計，以第一個月的帳單為準）
 
-Lambda 在免費額度內；DynamoDB 隨需計費每月不到 1 美元；CloudWatch 約 0–2 美元。**合計每月約 1–3 美元。** 預算告警在 5 美元和 10 美元時寄信。刻意不用 NAT、RDS、EKS、負載平衡器。
+Lambda 在免費額度內；DynamoDB 隨需計費每月不到 1 美元；CloudWatch 約 0–2 美元；S3 存信和頁面幾乎不花錢。**AWS 合計每月約 1–3 美元。** 預算告警在 5 美元和 10 美元時寄信。刻意不用 NAT、RDS、EKS、負載平衡器。
+
+Claude 另外計費（Anthropic）：單頁約 0.02～0.04 美元，批次半價；國外職缺每天最多 10 個（`assess.board_daily_max`），約每月 6 美元以內。每則評分和總表最後一行都寫了花費；上限設在 Anthropic Console。
 
 ## 9. 進度
 
 | 階段 | 狀態 |
 |---|---|
-| 1–4 本機程式（抓取、篩選、比對、通知） | ✅ 完成，有測試；2026-10-11 本機實跑每家 1,300 個看板 |
-| 5 AWS 和 Terraform | 程式碼已寫好，**還沒部署**（需要 AWS 帳號，並安裝 Terraform 和 AWS CLI） |
-| 6 指標、儀表板、告警 | 程式碼已寫好，跟第 5 階段一起部署 |
-| 7 SQS 分派加 DLQ；GitHub Actions 用 OIDC 部署 | 未做（CI 已有：測試加上 terraform validate） |
-| 8 和 career-ops 比對兩週；寫 README、ADR、履歷條目 | 部署後進行 |
-| 9 Workday | 未做 |
+| 1–4 本機程式（抓取、篩選、比對、通知） | ✅ 2026-10-11 |
+| 5–6 AWS、Terraform、指標、儀表板、告警 | ✅ 2026-10-13 部署 |
+| 104 配對信（SES 收信、解析、日報） | ✅ 2026-10-20 |
+| 送到雷達：單頁評分、批次評分、帶入應徵 | ✅ 2026-10-21～23 |
+| 告警到 Telegram、版本與部署防呆、早上提醒、JD 保存、評估集、國外職缺 AI 評分 | ✅ 2026-10-23～25 |
+| DLQ 與錯誤分級 | 未做（下一個實作題） |
+| GitHub Actions 用 OIDC 自動部署、測試環境 | 未做（CI 已有：測試加上 terraform validate） |
+| Workday | 未做 |
