@@ -140,7 +140,8 @@ type BatchReceipt struct {
 // is skipped, and the rest go to the model as one Message Batch; each of
 // those is also kept on its own (jdName). The batch
 // is recorded open; CheckBatches sends the summary once it has ended. When
-// nothing is left for the model the summary goes out at once.
+// nothing is left for the model the summary goes out at once; otherwise the
+// caller says the batch went out (BuildBatchReceipt).
 func SubmitPages(ctx context.Context, d Deps, a BatchAssessor, n notify.Notifier, archive PageArchive,
 	rules PageRules, profile string, pages []assess.Page) (BatchReceipt, error) {
 	now := d.Now()
@@ -204,15 +205,14 @@ func SubmitPages(ctx context.Context, d Deps, a BatchAssessor, n notify.Notifier
 	}
 	d.Log.Info("batch submitted", "batch", id, "received", r.Received, "submitted", r.Submitted,
 		"excluded", r.Excluded, "skipped", r.Skipped)
-	if err := n.Send(ctx, BuildBatchReceipt(r)); err != nil {
-		d.Log.Error("send batch receipt", "err", err)
-	}
 	return r, nil
 }
 
-// BuildBatchReceipt is the Telegram note sent when a batch goes out.
+// BuildBatchReceipt is the Telegram note the batch button gets once its
+// batch went out (BatchID set). A Message Batch ends within 24 hours,
+// usually minutes to a few hours.
 func BuildBatchReceipt(r BatchReceipt) string {
-	return fmt.Sprintf("📥 收到 %d 頁：送 AI 評分 %d｜規則排除 %d｜略過 %d\n結果通常一小時內傳來，分頁可以關了。",
+	return fmt.Sprintf("📥 收到 %d 頁：送 AI 評分 %d｜規則排除 %d｜略過 %d\n分頁可以關了，總表最久 24 小時內傳來（通常幾分鐘到幾小時）。",
 		r.Received, r.Submitted, r.Excluded, r.Skipped)
 }
 
