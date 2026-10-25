@@ -7,9 +7,11 @@
 //
 // ingest is invoked by S3 when SES stores a message, and clip through its
 // function URL by the 送到雷達 browser extension: POST / judges a page,
-// GET /jobs lists the 104 alert jobs for the extension to open, and
-// POST /batch sends the open tabs as one Message Batch. The scheduler runs
-// batch every ten minutes to send the summary of each batch that has ended:
+// GET /jobs lists the 104 alert jobs for the extension to open,
+// POST /batch sends the open tabs as one Message Batch, and POST /telegram
+// takes the bot's webhook: a pressed label button under a judgement. The
+// scheduler runs batch every ten minutes to send the summary of each batch
+// that has ended:
 //
 //	{"task":"batch-check"}
 //
@@ -253,9 +255,10 @@ type urlHandler func(context.Context, events.LambdaFunctionURLRequest) events.La
 // x-radar-server.
 func (h *handler) serve(ctx context.Context, r events.LambdaFunctionURLRequest) events.LambdaFunctionURLResponse {
 	routes := map[string]map[string]urlHandler{
-		"/":      {http.MethodPost: h.clip},
-		"/jobs":  {http.MethodGet: h.jobs},
-		"/batch": {http.MethodPost: h.batch},
+		"/":         {http.MethodPost: h.clip},
+		"/jobs":     {http.MethodGet: h.jobs},
+		"/batch":    {http.MethodPost: h.batch},
+		"/telegram": {http.MethodPost: h.telegram},
 	}
 	path := r.RawPath
 	if path == "" {
@@ -274,7 +277,12 @@ func (h *handler) serve(ctx context.Context, r events.LambdaFunctionURLRequest) 
 		h.log.Error("clip secret", "err", err)
 		return reply(http.StatusInternalServerError, "server error")
 	}
-	if got := header(r.Headers, "x-radar-secret"); want == "" || subtle.ConstantTimeCompare([]byte(got), []byte(want)) != 1 {
+	// Telegram sends the secret given to setWebhook in its own header.
+	secretHeader := "x-radar-secret"
+	if path == "/telegram" {
+		secretHeader = "x-telegram-bot-api-secret-token"
+	}
+	if got := header(r.Headers, secretHeader); want == "" || subtle.ConstantTimeCompare([]byte(got), []byte(want)) != 1 {
 		h.log.Warn("clip refused", "path", path, "source_ip", r.RequestContext.HTTP.SourceIP)
 		return reply(http.StatusUnauthorized, "unauthorized")
 	}
@@ -290,6 +298,37 @@ func (h *handler) serve(ctx context.Context, r events.LambdaFunctionURLRequest) 
 	}
 	resp.Headers["x-radar-server"] = h.commit
 	return resp
+}
+
+// telegram takes the bot's webhook updates: a pressed label button is
+// stored and answered. Telegram retries an update until it gets a 2xx, so
+// only a failure to store asks for a retry; anything else is answered 200.
+func (h *handler) telegram(ctx context.Context, r events.LambdaFunctionURLRequest) events.LambdaFunctionURLResponse {
+	body, status := requestBody(r, 64<<10)
+	if status != 0 {
+		return reply(status, http.StatusText(status))
+	}
+	var u app.TelegramUpdate
+	if err := json.Unmarshal(body, &u); err != nil {
+		h.log.Warn("telegram update", "err", err)
+		return reply(http.StatusOK, "ignored")
+	}
+	if u.CallbackQuery == nil {
+		return reply(http.StatusOK, "ignored")
+	}
+	token, err := h.secret(ctx, mustEnv("TELEGRAM_TOKEN_PARAM"))
+	if err != nil {
+		h.log.Error("telegram token", "err", err)
+		return reply(http.StatusInternalServerError, "server error")
+	}
+	n := notify.Telegram{Token: token, ChatID: mustEnv("TELEGRAM_CHAT_ID")}
+	if err := app.HandleLabel(ctx, h.deps, n, n.ChatID, u); err != nil {
+		h.log.Error("label", "err", err)
+		if errors.Is(err, app.ErrLabelNotSaved) {
+			return reply(http.StatusInternalServerError, "server error")
+		}
+	}
+	return reply(http.StatusOK, "ok")
 }
 
 // jobs lists the 104 alert jobs first seen since the time in the since

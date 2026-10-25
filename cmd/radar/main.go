@@ -5,7 +5,7 @@
 //	radar scan --ats greenhouse [--limit 200] [--silent] [--no-baseline]
 //	radar digest [--dry-run]
 //	radar ingest-file message.eml ...
-//	radar eval --labels labels.csv [--profile draft.md]
+//	radar eval --labels labels.csv|telegram [--profile draft.md]
 //	radar backfill-jd
 //	radar labels > labels.csv
 package main
@@ -45,7 +45,8 @@ commands:
                mail (keep real messages outside the repository)
   eval         judge the kept pages of the jobs in --labels again, with the
                profile in SSM or a draft (--profile), and compare with your
-               labels (CSV: key,want,note; want is 投/看/不 or a score).
+               labels (CSV: key,want,note; want is 投/看/不 or a score), or
+               with the Telegram buttons you pressed (--labels telegram).
                Each job is one model call, about US$0.03.
   backfill-jd  point judgements made before pages were kept at their page,
                found in the batches still archived (30 days)
@@ -200,17 +201,26 @@ func run(ctx context.Context, log *slog.Logger, cmd string, args []string, state
 // evaluate runs radar eval. The API key and, unless a draft is given, the
 // profile are read from SSM into memory, never into the environment.
 func evaluate(ctx context.Context, d app.Deps, labelsPath, profilePath string) error {
-	if labelsPath == "" {
-		return fmt.Errorf("eval needs --labels path.csv")
-	}
-	f, err := os.Open(labelsPath)
-	if err != nil {
-		return err
-	}
-	cases, err := app.ParseLabels(f)
-	f.Close()
-	if err != nil {
-		return err
+	var cases []app.EvalCase
+	switch labelsPath {
+	case "":
+		return fmt.Errorf("eval needs --labels path.csv, or --labels telegram for the buttons pressed")
+	case "telegram":
+		ls, err := d.Store.Labels(ctx)
+		if err != nil {
+			return err
+		}
+		cases = app.LabelCases(ls)
+	default:
+		f, err := os.Open(labelsPath)
+		if err != nil {
+			return err
+		}
+		cases, err = app.ParseLabels(f)
+		f.Close()
+		if err != nil {
+			return err
+		}
 	}
 	awsCfg, err := awsconfig.LoadDefaultConfig(ctx)
 	if err != nil {

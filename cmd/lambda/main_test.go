@@ -166,6 +166,39 @@ func TestServeVersions(t *testing.T) {
 	}
 }
 
+func TestServeTelegramGate(t *testing.T) {
+	t.Setenv("CLIP_SECRET_PARAM", "/test/clip-secret")
+	h := &handler{log: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		secret: func(_ context.Context, name string) (string, error) {
+			if name == "/test/clip-secret" {
+				return "right-secret", nil
+			}
+			return "", errors.New("not allowed in this test")
+		}}
+	req := func(header, value, body string) events.LambdaFunctionURLRequest {
+		r := events.LambdaFunctionURLRequest{RawPath: "/telegram", Headers: map[string]string{header: value}, Body: body}
+		r.RequestContext.HTTP.Method = http.MethodPost
+		return r
+	}
+	for _, c := range []struct {
+		name          string
+		header, value string
+		body          string
+		want          int
+	}{
+		{"telegram's header", "x-telegram-bot-api-secret-token", "right-secret", `{"update_id":1,"message":{"text":"hi"}}`, http.StatusOK},
+		{"wrong secret", "x-telegram-bot-api-secret-token", "nope", `{}`, http.StatusUnauthorized},
+		{"the extension's header does not open it", "x-radar-secret", "right-secret", `{}`, http.StatusUnauthorized},
+		{"not JSON is acknowledged", "x-telegram-bot-api-secret-token", "right-secret", `[`, http.StatusOK},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			if got := h.serve(context.Background(), req(c.header, c.value, c.body)).StatusCode; got != c.want {
+				t.Errorf("status = %d, want %d", got, c.want)
+			}
+		})
+	}
+}
+
 func TestJobsList(t *testing.T) {
 	t.Setenv("CLIP_SECRET_PARAM", "/test/clip-secret")
 	now := time.Date(2026, 10, 22, 12, 0, 0, 0, time.UTC)
