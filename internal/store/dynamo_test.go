@@ -31,6 +31,7 @@ type fakeDynamo struct {
 	putErr      error
 	gets        []*dynamodb.GetItemInput
 	item        map[string]types.AttributeValue // what GetItem answers
+	scans       []*dynamodb.ScanInput
 }
 
 func newFake() *fakeDynamo {
@@ -46,6 +47,25 @@ func (f *fakeDynamo) Query(_ context.Context, in *dynamodb.QueryInput, _ ...func
 		page, _ = strconv.Atoi(v.Value)
 	}
 	out := &dynamodb.QueryOutput{}
+	if page < len(f.pages) {
+		out.Items = f.pages[page]
+	}
+	if page+1 < len(f.pages) {
+		out.LastEvaluatedKey = map[string]types.AttributeValue{"page": &types.AttributeValueMemberN{Value: strconv.Itoa(page + 1)}}
+	}
+	return out, nil
+}
+
+// Scan pages through f.pages the way Query does.
+func (f *fakeDynamo) Scan(_ context.Context, in *dynamodb.ScanInput, _ ...func(*dynamodb.Options)) (*dynamodb.ScanOutput, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.scans = append(f.scans, in)
+	page := 0
+	if v, ok := in.ExclusiveStartKey["page"].(*types.AttributeValueMemberN); ok {
+		page, _ = strconv.Atoi(v.Value)
+	}
+	out := &dynamodb.ScanOutput{}
 	if page < len(f.pages) {
 		out.Items = f.pages[page]
 	}
@@ -323,5 +343,32 @@ func TestDynamoAssessmentOf(t *testing.T) {
 	a, ok, err := d.AssessmentOf(context.Background(), "assess#104#aaa01")
 	if !ok || err != nil || a.Score != 70 || s(f.gets[1].Key["key"]) != "assess#104#aaa01" {
 		t.Fatalf("a=%+v ok=%v err=%v", a, ok, err)
+	}
+}
+
+func TestDynamoLabels(t *testing.T) {
+	ctx := context.Background()
+	f := newFake()
+	d := NewDynamo(f, "boards", "jobs", "runs")
+	at := time.Date(2026, 10, 25, 9, 0, 0, 0, time.UTC)
+	if err := d.SaveLabel(ctx, Label{Key: "label#104#aaa01", Want: "建議投", LabeledAt: at}); err != nil {
+		t.Fatal(err)
+	}
+	put := f.puts[0]
+	if *put.TableName != "jobs" || put.Item["key"].(*types.AttributeValueMemberS).Value != "label#104#aaa01" ||
+		put.Item["want"].(*types.AttributeValueMemberS).Value != "建議投" {
+		t.Errorf("put = %+v", put.Item)
+	}
+	item := func(key, want string) map[string]types.AttributeValue {
+		return map[string]types.AttributeValue{"key": &types.AttributeValueMemberS{Value: key}, "want": &types.AttributeValueMemberS{Value: want}}
+	}
+	f.pages = [][]map[string]types.AttributeValue{{item("label#104#aaa01", "建議投")}, {item("label#104#bbb01", "不建議")}}
+	ls, err := d.Labels(ctx)
+	if err != nil || len(ls) != 2 || ls[1].Want != "不建議" || len(f.scans) != 2 {
+		t.Fatalf("labels %+v, err %v, scans %d", ls, err, len(f.scans))
+	}
+	if got := *f.scans[0].FilterExpression; got != "begins_with(#k, :p)" ||
+		f.scans[0].ExpressionAttributeValues[":p"].(*types.AttributeValueMemberS).Value != "label#" {
+		t.Errorf("filter = %s %v", got, f.scans[0].ExpressionAttributeValues)
 	}
 }
