@@ -2,6 +2,8 @@ package app
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,10 +27,23 @@ type BatchAssessor interface {
 	Results(ctx context.Context, batchID string) ([]assess.Result, error)
 }
 
-// PageArchive keeps the pages of a batch as sent, so they can be batchResult
-// again (a new rubric, a failed request) without reopening them.
+// PageArchive keeps pages as JSON under a name: each batch as sent, so it
+// can be judged again (a new rubric, a failed request) without reopening
+// the tabs, and each judged page on its own (jdName), so a judgement can be
+// read next to the posting it came from.
 type PageArchive interface {
-	SavePages(ctx context.Context, name string, pages []assess.Page) error
+	Save(ctx context.Context, name string, v any) error
+}
+
+// jdName is where a judged page is kept: jd/104/<code>.json for a 104 job,
+// jd/web/<hash>.json for a page elsewhere, whose key is its URL. A page
+// judged again replaces the older copy.
+func jdName(key string) string {
+	if code, ok := strings.CutPrefix(key, alertATS+"#"); ok {
+		return "jd/104/" + code + ".json"
+	}
+	sum := sha256.Sum256([]byte(key))
+	return "jd/web/" + hex.EncodeToString(sum[:8]) + ".json"
 }
 
 // PageRules are the cheap checks a page from the batch button goes through
@@ -121,14 +136,15 @@ type BatchReceipt struct {
 }
 
 // SubmitPages takes the pages the batch button read from the open tabs.
-// Each is archived, then the rules run, a job batchResult in the last two weeks
-// is skipped, and the rest go to the model as one Message Batch. The batch
+// Each is archived, then the rules run, a job judged in the last two weeks
+// is skipped, and the rest go to the model as one Message Batch; each of
+// those is also kept on its own (jdName). The batch
 // is recorded open; CheckBatches sends the summary once it has ended. When
 // nothing is left for the model the summary goes out at once.
 func SubmitPages(ctx context.Context, d Deps, a BatchAssessor, n notify.Notifier, archive PageArchive,
 	rules PageRules, profile string, pages []assess.Page) (BatchReceipt, error) {
 	now := d.Now()
-	if err := archive.SavePages(ctx, now.Format("2006-01-02T15-04-05Z")+".json", pages); err != nil {
+	if err := archive.Save(ctx, "batches/"+now.Format("2006-01-02T15-04-05Z")+".json", pages); err != nil {
 		d.Log.Error("archive pages", "err", err)
 	}
 	b := store.Batch{Pending: store.BatchPending, SubmittedAt: now, Model: d.Cfg.Assess.Model}
@@ -164,6 +180,11 @@ func SubmitPages(ctx context.Context, d Deps, a BatchAssessor, n notify.Notifier
 			continue
 		}
 		it.ID = fmt.Sprintf("p%d", len(items))
+		if err := archive.Save(ctx, jdName(key), p); err != nil {
+			d.Log.Error("keep page", "key", key, "err", err)
+		} else {
+			it.JD = jdName(key)
+		}
 		items = append(items, assess.BatchItem{ID: it.ID, Page: p})
 		b.Items = append(b.Items, it)
 	}
@@ -263,6 +284,7 @@ func (d Deps) storeResults(ctx context.Context, b store.Batch, results []assess.
 		rec := store.Assessment{
 			Key: "assess#" + it.Key, URL: it.URL, Title: r.Assessment.JobTitle, Company: r.Assessment.Company,
 			Score: r.Assessment.Score, Verdict: r.Assessment.Verdict, Model: b.Model, AssessedAt: now, Detail: string(detail),
+			JD: it.JD,
 		}
 		if err := d.Store.SaveAssessment(ctx, rec); err != nil {
 			d.Log.Error("save assessment", "key", it.Key, "err", err)

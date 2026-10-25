@@ -28,10 +28,21 @@ func (f *fakeBatches) Results(context.Context, string) ([]assess.Result, error) 
 	return f.results, nil
 }
 
-type memArchive struct{ names []string }
+type memArchive struct {
+	names []string
+	saved map[string]any
+	fail  bool
+}
 
-func (m *memArchive) SavePages(_ context.Context, name string, pages []assess.Page) error {
+func (m *memArchive) Save(_ context.Context, name string, v any) error {
+	if m.fail {
+		return errors.New("s3 down")
+	}
 	m.names = append(m.names, name)
+	if m.saved == nil {
+		m.saved = map[string]any{}
+	}
+	m.saved[name] = v
 	return nil
 }
 
@@ -103,8 +114,16 @@ func TestSubmitAndCheckBatch(t *testing.T) {
 	if len(fb.submitted) != 2 || fb.submitted[0].ID != "p0" || fb.submitted[1].Page.URL != "https://www.104.com.tw/job/old02" || fb.profile != "我的評分檔案" {
 		t.Fatalf("submitted = %+v", fb.submitted)
 	}
-	if len(arch.names) != 1 || len(tg.msgs) != 1 || !strings.Contains(tg.msgs[0], "📥 收到 6 頁：送 AI 評分 2｜規則排除 1｜略過 2") {
-		t.Fatalf("archive %v, telegram %q", arch.names, tg.msgs)
+	// The batch as sent, then each page that went to the model on its own.
+	if len(arch.names) != 3 || !strings.HasPrefix(arch.names[0], "batches/") ||
+		arch.names[1] != "jd/104/aaa01.json" || arch.names[2] != "jd/104/old02.json" {
+		t.Fatalf("archive %v", arch.names)
+	}
+	if p, ok := arch.saved["jd/104/aaa01.json"].(assess.Page); !ok || p.Text != "工作內容：後端 API" {
+		t.Fatalf("kept page = %#v", arch.saved["jd/104/aaa01.json"])
+	}
+	if len(tg.msgs) != 1 || !strings.Contains(tg.msgs[0], "📥 收到 6 頁：送 AI 評分 2｜規則排除 1｜略過 2") {
+		t.Fatalf("telegram %q", tg.msgs)
 	}
 	open, _ := st.OpenBatches(ctx)
 	if len(open) != 1 || open[0].BatchID != "msgbatch_1" || open[0].Items[1].Key != "104#old02" || open[0].Skipped[1].Reason != "兩週內評過：64 分" {
@@ -141,7 +160,7 @@ func TestSubmitAndCheckBatch(t *testing.T) {
 			t.Errorf("summary missing %q:\n%s", want, msg)
 		}
 	}
-	if a, ok := st.Assessment("assess#104#aaa01"); !ok || a.Score != 82 || a.Model != d.Cfg.Assess.Model {
+	if a, ok := st.Assessment("assess#104#aaa01"); !ok || a.Score != 82 || a.Model != d.Cfg.Assess.Model || a.JD != "jd/104/aaa01.json" {
 		t.Errorf("judgement stored: %+v %v", a, ok)
 	}
 	if open, _ := st.OpenBatches(ctx); len(open) != 0 {

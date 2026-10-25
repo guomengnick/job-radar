@@ -37,13 +37,13 @@ locals {
     ]
     # Read its five parameters; store judgements (assess# items) and
     # batches, and look up an earlier judgement; list the 104 jobs for the
-    # extension; archive a batch's pages.
+    # extension; keep a batch's pages and each judged page.
     clip = [
       { actions = ["ssm:GetParameter"], resources = [for p in [var.anthropic_key_param, var.assess_profile_param, var.clip_secret_param, var.telegram_token_param, var.batch_rules_param] :
       "arn:aws:ssm:${var.region}:${data.aws_caller_identity.me.account_id}:parameter${p}"] },
       { actions = ["dynamodb:PutItem", "dynamodb:GetItem"], resources = [aws_dynamodb_table.jobs.arn] },
       { actions = ["dynamodb:Query"], resources = ["${aws_dynamodb_table.jobs.arn}/index/source-index"] },
-      { actions = ["s3:PutObject"], resources = ["${aws_s3_bucket.pages.arn}/batches/*"] },
+      { actions = ["s3:PutObject"], resources = ["${aws_s3_bucket.pages.arn}/batches/*", "${aws_s3_bucket.pages.arn}/jd/*"] },
     ]
     # Find open batches; store their judgements and close them.
     batch = [

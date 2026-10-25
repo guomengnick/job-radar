@@ -26,9 +26,10 @@ var ErrBadClip = errors.New("bad clip")
 var job104 = regexp.MustCompile(`^https?://www\.104\.com\.tw/job/([0-9a-z]+)`)
 
 // Clip judges a page the user sent with the 送到雷達 button and replies on
-// Telegram. The judgement is stored for later comparison with what the user
-// applied to; a failure to store it is logged, since the reply already went.
-func Clip(ctx context.Context, d Deps, a Assessor, n notify.Notifier, profile string, p assess.Page) (assess.Assessment, error) {
+// Telegram. The page is kept (jdName) and the judgement stored with a
+// pointer to it, for later comparison with what the user applied to; a
+// failure to keep either is logged, since the reply matters more.
+func Clip(ctx context.Context, d Deps, a Assessor, n notify.Notifier, archive PageArchive, profile string, p assess.Page) (assess.Assessment, error) {
 	u, err := url.Parse(p.URL)
 	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
 		return assess.Assessment{}, fmt.Errorf("%w: the url must be a web page", ErrBadClip)
@@ -38,6 +39,11 @@ func Clip(ctx context.Context, d Deps, a Assessor, n notify.Notifier, profile st
 	}
 	now := d.Now()
 	key := clipKey(u)
+	jd := jdName(key)
+	if err := archive.Save(ctx, jd, p); err != nil {
+		d.Log.Error("keep page", "key", key, "err", err)
+		jd = ""
+	}
 	j, usage, err := a.Assess(ctx, profile, p)
 	if err != nil {
 		d.Log.Error("assess failed", "key", key, "err", err)
@@ -54,7 +60,7 @@ func Clip(ctx context.Context, d Deps, a Assessor, n notify.Notifier, profile st
 	detail, _ := json.Marshal(j)
 	rec := store.Assessment{
 		Key: "assess#" + key, URL: u.String(), Title: j.JobTitle, Company: j.Company, Score: j.Score,
-		Verdict: j.Verdict, Model: d.Cfg.Assess.Model, AssessedAt: now, Detail: string(detail),
+		Verdict: j.Verdict, Model: d.Cfg.Assess.Model, AssessedAt: now, Detail: string(detail), JD: jd,
 	}
 	if err := d.Store.SaveAssessment(ctx, rec); err != nil {
 		d.Log.Error("save assessment", "key", key, "err", err)

@@ -95,6 +95,9 @@ type Assessment struct {
 	Model      string    `json:"model" dynamodbav:"model"`
 	AssessedAt time.Time `json:"assessed_at" dynamodbav:"assessed_at"`
 	Detail     string    `json:"detail" dynamodbav:"detail"` // the full judgement as JSON
+	// JD is the page it judged, kept in the pages bucket (for example
+	// jd/104/abc.json); empty when keeping it failed or before 2026-10-25.
+	JD string `json:"jd,omitempty" dynamodbav:"jd,omitempty"`
 }
 
 // Batch is one set of pages sent with the extension's batch button, kept
@@ -123,6 +126,7 @@ type BatchItem struct {
 	URL    string `json:"url" dynamodbav:"url"`
 	Title  string `json:"title" dynamodbav:"title"`
 	Reason string `json:"reason,omitempty" dynamodbav:"reason,omitempty"`
+	JD     string `json:"jd,omitempty" dynamodbav:"jd,omitempty"` // where the page is kept, when it went to the model
 }
 
 // BatchPending marks an open batch in pending-index.
