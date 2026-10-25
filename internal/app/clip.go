@@ -122,7 +122,7 @@ func BuildAssessment(pageURL string, j assess.Assessment) string {
 const ApplyLinkMinScore = 55
 
 // letterLineMax bounds the sentence carried in the link; the prompt asks for
-// 60 characters, and a link stays well under what browsers and Telegram take.
+// 40 characters, and a link stays well under what browsers and Telegram take.
 const letterLineMax = 120
 
 // ApplyURL is a 104 job page that opens its apply form (104's own
