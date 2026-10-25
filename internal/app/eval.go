@@ -7,10 +7,12 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/guomengnick/job-radar/internal/assess"
+	"github.com/guomengnick/job-radar/internal/store"
 )
 
 // PageSource reads back what a PageArchive kept: a judged page under jd/,
@@ -160,4 +162,48 @@ func BuildEvalReport(rows []EvalRow, model string) string {
 	fmt.Fprintf(&b, "\n跟你的判斷一致：原本 %d/%d → 這次 %d/%d\n", oldAgree, judged, newAgree, judged)
 	b.WriteString(strings.TrimPrefix(usageLine(model, total, false), "💰 ") + "\n")
 	return b.String()
+}
+
+// LabelRows lists the jobs judged from the archived batches (the last 30
+// days), best score first, as rows of a labels file with want left empty
+// for the user to fill in: key, "", and a note with the score, verdict,
+// title and company.
+func LabelRows(ctx context.Context, d Deps, pages PageSource) ([][]string, error) {
+	names, err := pages.List(ctx, "batches/")
+	if err != nil {
+		return nil, err
+	}
+	seen := map[string]bool{}
+	var recs []store.Assessment
+	for _, name := range names {
+		var batch []assess.Page
+		if err := pages.Load(ctx, name, &batch); err != nil {
+			return nil, fmt.Errorf("read %s: %w", name, err)
+		}
+		for _, p := range batch {
+			u, err := url.Parse(p.URL)
+			if err != nil || u.Host == "" {
+				continue
+			}
+			key := clipKey(u)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			rec, ok, err := d.Store.AssessmentOf(ctx, "assess#"+key)
+			if err != nil {
+				return nil, err
+			}
+			if ok {
+				rec.Key = key
+				recs = append(recs, rec)
+			}
+		}
+	}
+	sort.SliceStable(recs, func(i, k int) bool { return recs[i].Score > recs[k].Score })
+	rows := [][]string{{"key", "want", "note"}}
+	for _, r := range recs {
+		rows = append(rows, []string{r.Key, "", fmt.Sprintf("AI %d %s｜%s｜%s", r.Score, r.Verdict, r.Title, r.Company)})
+	}
+	return rows, nil
 }

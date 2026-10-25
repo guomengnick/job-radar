@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/csv"
 	"strings"
 	"testing"
 	"time"
@@ -122,5 +123,43 @@ func TestBackfillJD(t *testing.T) {
 	}
 	if n, _ := BackfillJD(ctx, d, pages, pages); n != 0 {
 		t.Errorf("a second run backfilled %d", n)
+	}
+}
+
+func TestLabelRows(t *testing.T) {
+	ctx := context.Background()
+	d, _, st, clk := setup(t)
+	pages := &memArchive{}
+	pages.Save(ctx, "batches/2026-10-24T14-39-53Z.json", []assess.Page{
+		{URL: "https://www.104.com.tw/job/aaa01?jobsource=x", Text: "a"},
+		{URL: "https://www.104.com.tw/job/bbb01", Text: "b"},
+		{URL: "https://www.104.com.tw/job/aaa01", Text: "a again"},
+		{URL: "https://www.104.com.tw/job/ccc01", Text: "never judged"},
+	})
+	st.SaveAssessment(ctx, store.Assessment{Key: "assess#104#aaa01", Title: "後端", Company: "甲", Score: 50, Verdict: "不建議", AssessedAt: clk.t})
+	st.SaveAssessment(ctx, store.Assessment{Key: "assess#104#bbb01", Title: "資料", Company: "乙", Score: 64, Verdict: "可考慮", AssessedAt: clk.t})
+	rows, err := LabelRows(ctx, d, pages)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := [][]string{
+		{"key", "want", "note"},
+		{"104#bbb01", "", "AI 64 可考慮｜資料｜乙"},
+		{"104#aaa01", "", "AI 50 不建議｜後端｜甲"},
+	}
+	if len(rows) != len(want) {
+		t.Fatalf("rows = %q", rows)
+	}
+	for i := range want {
+		if strings.Join(rows[i], ",") != strings.Join(want[i], ",") {
+			t.Errorf("row %d = %q, want %q", i, rows[i], want[i])
+		}
+	}
+	// The file it makes reads back with nothing labelled yet.
+	var b strings.Builder
+	w := csv.NewWriter(&b)
+	w.WriteAll(rows)
+	if cases, err := ParseLabels(strings.NewReader(b.String())); err != nil || len(cases) != 0 {
+		t.Errorf("parsed back %+v, %v", cases, err)
 	}
 }

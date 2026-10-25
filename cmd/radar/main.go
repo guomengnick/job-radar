@@ -7,10 +7,12 @@
 //	radar ingest-file message.eml ...
 //	radar eval --labels labels.csv [--profile draft.md]
 //	radar backfill-jd
+//	radar labels > labels.csv
 package main
 
 import (
 	"context"
+	"encoding/csv"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -47,6 +49,8 @@ commands:
                Each job is one model call, about US$0.03.
   backfill-jd  point judgements made before pages were kept at their page,
                found in the batches still archived (30 days)
+  labels       print a labels file for eval: the jobs judged from the
+               archived batches, best first, with want left for you to fill
 
 common flags:
   --state path   local state file (default .radar/state.json)
@@ -84,7 +88,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	if cmd == "eval" || cmd == "backfill-jd" {
+	if cmd == "eval" || cmd == "backfill-jd" || cmd == "labels" {
 		*storeKind = "dynamo"
 	}
 	if err := run(ctx, log, cmd, fs.Args(), *statePath, *storeKind, *cfgPath, *atsName, *limit, *silent, *noBaseline, *fromFile, *dryRun, *labels, *profile); err != nil {
@@ -159,6 +163,22 @@ func run(ctx context.Context, log *slog.Logger, cmd string, args []string, state
 		}
 	case "eval":
 		return evaluate(ctx, d, labels, profilePath)
+	case "labels":
+		awsCfg, err := awsconfig.LoadDefaultConfig(ctx)
+		if err != nil {
+			return err
+		}
+		kept, err := pages.ForAccount(ctx, awsCfg)
+		if err != nil {
+			return err
+		}
+		rows, err := app.LabelRows(ctx, d, kept)
+		if err != nil {
+			return err
+		}
+		w := csv.NewWriter(os.Stdout)
+		w.WriteAll(rows)
+		return w.Error()
 	case "backfill-jd":
 		awsCfg, err := awsconfig.LoadDefaultConfig(ctx)
 		if err != nil {

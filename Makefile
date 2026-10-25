@@ -1,4 +1,4 @@
-.PHONY: test vet build lambda plan apply check-main deployed eval backfill-jd profile clean extension-config
+.PHONY: test vet build lambda plan apply check-main deployed eval backfill-jd labels profile clean extension-config
 
 test:
 	go test -race ./...
@@ -48,6 +48,10 @@ deployed:
 # One model call per job (about US$0.03). Keep both files outside the repo.
 eval:
 	go run ./cmd/radar eval --labels "$(LABELS)" $(if $(PROFILE),--profile "$(PROFILE)")
+
+# A labels file to fill in for make eval: make labels > ../履歷相關/labels.csv
+labels:
+	@go run ./cmd/radar labels
 
 # Point judgements made before pages were kept at their page (once).
 backfill-jd:
