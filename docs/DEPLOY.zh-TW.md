@@ -204,6 +204,67 @@ AWS_PROFILE=radar make eval LABELS=../履歷相關/評分標準答案.csv PROFIL
 AWS_PROFILE=radar make profile PROFILE=../履歷相關/job-radar_評分檔案.md
 ```
 
+### 用 GitHub 部署（不用 aws login，也不用打指令）
+
+設定好之後，部署變成在 GitHub 上按按鈕：
+
+1. GitHub → Actions → **deploy** → **Run workflow**（分支 main）。
+2. 等 **plan** 那一步跑完，點進去看 Summary：要新增、修改、刪除哪些東西。
+3. 沒問題，到 **apply** 那一步按 **Review deployments → Approve**。沒按就不會部署。
+4. 跑完，Summary 最後一段就是 `make deployed` 的結果：每個函式跑的是哪個 commit。
+
+另外，每個 PR 只要改到程式或 `infra/`，GitHub 會自動跑一次唯讀的 plan，在 PR 的 Checks → plan → Summary 看得到這個 PR 會改雲端的哪些東西。
+
+**原理**：GitHub Actions 用 OIDC 登入 AWS。每次執行，GitHub 發一張幾分鐘內有效的證明，AWS 只認這個 repo 的；所以 GitHub 上沒有存任何 AWS 金鑰。有兩個角色：
+
+| 角色 | 誰能用 | 能做什麼 |
+|---|---|---|
+| `job-radar-github-plan` | 這個 repo 的 PR、從 main 執行的 deploy 的 plan 那一步 | 只能讀，而且讀不到四個秘密參數 |
+| `job-radar-github-deploy` | 只有 `production` 環境的工作（只能從 main、要你核准） | 改整套服務；IAM 只能動 `job-radar-*` 的角色 |
+
+**一次性設定（照順序）**
+
+1. 先在本機部署一次，把上面兩個角色建出來（它們不存在之前，GitHub 登入不了）：
+
+```bash
+AWS_PROFILE=radar make apply
+```
+
+2. 建 `production` 環境：GitHub → Settings → Environments → New environment，名字填 `production`：
+   - 勾 **Required reviewers**，選你自己；
+   - **Deployment branches and tags** 選 Selected branches，加上 `main`。
+3. 設 3 個變數（不是秘密，只是名字）：
+
+```bash
+gh variable set AWS_PLAN_ROLE_ARN --body "$(terraform -chdir=infra output -json github_roles | jq -r .plan)"
+```
+
+```bash
+gh variable set AWS_DEPLOY_ROLE_ARN --body "$(terraform -chdir=infra output -json github_roles | jq -r .deploy)"
+```
+
+```bash
+gh variable set TF_STATE_BUCKET --body "$(sed -n 's/^bucket *= *"\(.*\)"/\1/p' infra/backend.hcl)"
+```
+
+4. 設 3 個秘密，值就是 `infra/terraform.tfvars` 裡的那三個。每個指令會等你貼上值再按 Enter，值不會留在指令紀錄裡：
+
+```bash
+gh secret set TF_VAR_ALERT_EMAIL
+```
+
+```bash
+gh secret set TF_VAR_TELEGRAM_CHAT_ID
+```
+
+```bash
+gh secret set TF_VAR_MAIL_DOMAIN
+```
+
+**公開 repo 的注意事項**：這個 repo 是公開的，Actions 的 log 誰都看得到。所以兩個 workflow 都只印 plan 的摘要和資源名稱，不印值；`alert_email`、`telegram_chat_id` 和 `clip_url` 也標成 sensitive，Terraform 不會顯示它們。來自 fork 的 PR 拿不到 AWS 角色，也拿不到秘密。
+
+`make apply` 還是可以用（例如 GitHub 掛了）；兩條路改的是同一份 Terraform 狀態。
+
 ## 6. 第一次載入看板，並建立基準線
 
 ```bash
