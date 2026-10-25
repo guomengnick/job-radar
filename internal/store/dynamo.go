@@ -28,6 +28,7 @@ type Dynamo struct {
 // check the requests it sends without an AWS account.
 type DynamoAPI interface {
 	dynamodb.QueryAPIClient
+	dynamodb.ScanAPIClient
 	GetItem(context.Context, *dynamodb.GetItemInput, ...func(*dynamodb.Options)) (*dynamodb.GetItemOutput, error)
 	PutItem(context.Context, *dynamodb.PutItemInput, ...func(*dynamodb.Options)) (*dynamodb.PutItemOutput, error)
 	UpdateItem(context.Context, *dynamodb.UpdateItemInput, ...func(*dynamodb.Options)) (*dynamodb.UpdateItemOutput, error)
@@ -349,6 +350,42 @@ func (d *Dynamo) RunsSince(ctx context.Context, since time.Time) ([]Run, error) 
 		for _, it := range items {
 			out = append(out, it.Run)
 		}
+	}
+	return out, nil
+}
+
+// SaveLabel puts the label in the jobs table under its own key prefix.
+func (d *Dynamo) SaveLabel(ctx context.Context, l Label) error {
+	item, err := attributevalue.MarshalMap(l)
+	if err != nil {
+		return err
+	}
+	if _, err := d.db.PutItem(ctx, &dynamodb.PutItemInput{TableName: &d.jobs, Item: item}); err != nil {
+		return fmt.Errorf("save label: %w", err)
+	}
+	return nil
+}
+
+// Labels scans the jobs table for label# items. A scan reads every item, so
+// this is for the radar command only; the table holds some ten thousand.
+func (d *Dynamo) Labels(ctx context.Context) ([]Label, error) {
+	var out []Label
+	p := dynamodb.NewScanPaginator(d.db, &dynamodb.ScanInput{
+		TableName:                 &d.jobs,
+		FilterExpression:          aws.String("begins_with(#k, :p)"),
+		ExpressionAttributeNames:  map[string]string{"#k": "key"},
+		ExpressionAttributeValues: map[string]types.AttributeValue{":p": &types.AttributeValueMemberS{Value: "label#"}},
+	})
+	for p.HasMorePages() {
+		page, err := p.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("scan labels: %w", err)
+		}
+		var ls []Label
+		if err := attributevalue.UnmarshalListOfMaps(page.Items, &ls); err != nil {
+			return nil, err
+		}
+		out = append(out, ls...)
 	}
 	return out, nil
 }

@@ -27,6 +27,7 @@ type memoryData struct {
 	// Assessments by key; nil in state files written before they existed.
 	Assessments map[string]Assessment `json:"assessments,omitempty"`
 	Batches     map[string]Batch      `json:"batches,omitempty"`
+	Labels      map[string]Label      `json:"labels,omitempty"`
 }
 
 func NewMemory() *Memory {
@@ -243,5 +244,26 @@ func (m *Memory) RunsSince(_ context.Context, since time.Time) ([]Run, error) {
 			out = append(out, r)
 		}
 	}
+	return out, nil
+}
+
+func (m *Memory) SaveLabel(_ context.Context, l Label) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.data.Labels == nil {
+		m.data.Labels = map[string]Label{}
+	}
+	m.data.Labels[l.Key] = l
+	return nil
+}
+
+func (m *Memory) Labels(_ context.Context) ([]Label, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]Label, 0, len(m.data.Labels))
+	for _, l := range m.data.Labels {
+		out = append(out, l)
+	}
+	sort.Slice(out, func(i, k int) bool { return out[i].Key < out[k].Key })
 	return out, nil
 }

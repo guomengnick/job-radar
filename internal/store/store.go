@@ -129,6 +129,14 @@ type BatchItem struct {
 	JD     string `json:"jd,omitempty" dynamodbav:"jd,omitempty"` // where the page is kept, when it went to the model
 }
 
+// Label is the user's own verdict on a judged job, from a Telegram button,
+// for evaluating the profile (radar eval). The latest press counts.
+type Label struct {
+	Key       string    `json:"key" dynamodbav:"key"`   // "label#" + the job's key
+	Want      string    `json:"want" dynamodbav:"want"` // 建議投 | 可考慮 | 不建議
+	LabeledAt time.Time `json:"labeled_at" dynamodbav:"labeled_at"`
+}
+
 // BatchPending marks an open batch in pending-index.
 const BatchPending = "batch"
 
@@ -157,4 +165,9 @@ type Store interface {
 	OpenBatches(ctx context.Context) ([]Batch, error)
 	// CloseBatch takes a batch out of the open ones.
 	CloseBatch(ctx context.Context, key string, at time.Time) error
+	// SaveLabel stores the user's verdict on a job, replacing an earlier one.
+	SaveLabel(ctx context.Context, l Label) error
+	// Labels returns every label. In DynamoDB it reads the whole table, so
+	// only the radar command calls it, now and then.
+	Labels(ctx context.Context) ([]Label, error)
 }
