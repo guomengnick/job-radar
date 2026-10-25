@@ -144,8 +144,10 @@ func TestSubmitAndCheckBatch(t *testing.T) {
 	if p, ok := arch.saved["jd/104/aaa01.json"].(assess.Page); !ok || p.Text != "工作內容：後端 API" {
 		t.Fatalf("kept page = %#v", arch.saved["jd/104/aaa01.json"])
 	}
-	if len(tg.msgs) != 1 || !strings.Contains(tg.msgs[0], "📥 收到 6 頁：送 AI 評分 2｜規則排除 1｜略過 2") {
-		t.Fatalf("telegram %q", tg.msgs)
+	// The caller says the batch went out; SubmitPages sends nothing yet.
+	if len(tg.msgs) != 0 || !strings.HasPrefix(BuildBatchReceipt(r), "📥 收到 6 頁：送 AI 評分 2｜規則排除 1｜略過 2\n") ||
+		!strings.Contains(BuildBatchReceipt(r), "最久 24 小時") {
+		t.Fatalf("telegram %q, receipt %q", tg.msgs, BuildBatchReceipt(r))
 	}
 	open, _ := st.OpenBatches(ctx)
 	if len(open) != 1 || open[0].BatchID != "msgbatch_1" || open[0].Items[1].Key != "104#old02" || open[0].Skipped[1].Reason != "兩週內評過：64 分" {
@@ -153,7 +155,7 @@ func TestSubmitAndCheckBatch(t *testing.T) {
 	}
 
 	// Not ended yet: nothing is sent, the batch stays open.
-	if n, err := CheckBatches(ctx, d, fb, tg, open); n != 0 || err != nil || len(tg.msgs) != 1 {
+	if n, err := CheckBatches(ctx, d, fb, tg, open); n != 0 || err != nil || len(tg.msgs) != 0 {
 		t.Fatalf("closed %d, err %v, sent %d", n, err, len(tg.msgs))
 	}
 
@@ -167,7 +169,7 @@ func TestSubmitAndCheckBatch(t *testing.T) {
 	if n, err := CheckBatches(ctx, d, fb, tg, open); n != 1 || err != nil {
 		t.Fatalf("closed %d, err %v", n, err)
 	}
-	msg := tg.msgs[1]
+	msg := tg.msgs[0]
 	for _, want := range []string{
 		"<b>📦 批次評分完成：5 個職缺</b>\nAI 評分 1｜規則排除 1｜略過 2｜失敗 1",
 		"<b>🟢 建議投：1</b>",

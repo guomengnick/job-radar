@@ -365,6 +365,11 @@ func (h *handler) batch(ctx context.Context, r events.LambdaFunctionURLRequest) 
 		h.log.Error("batch", "err", err)
 		return reply(http.StatusBadGateway, "batch failed")
 	}
+	if receipt.BatchID != "" {
+		if err := n.Send(ctx, app.BuildBatchReceipt(receipt)); err != nil {
+			h.log.Error("send batch receipt", "err", err)
+		}
+	}
 	out, _ := json.Marshal(receipt)
 	return events.LambdaFunctionURLResponse{StatusCode: http.StatusAccepted, Body: string(out),
 		Headers: map[string]string{"content-type": "application/json"}}
