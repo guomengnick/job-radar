@@ -18,7 +18,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"crypto/subtle"
 	"encoding/base64"
@@ -42,6 +41,7 @@ import (
 	"github.com/guomengnick/job-radar/internal/app"
 	"github.com/guomengnick/job-radar/internal/assess"
 	"github.com/guomengnick/job-radar/internal/notify"
+	"github.com/guomengnick/job-radar/internal/pages"
 	"github.com/guomengnick/job-radar/internal/store"
 	"github.com/guomengnick/job-radar/internal/version"
 )
@@ -321,7 +321,7 @@ func (h *handler) clip(ctx context.Context, r events.LambdaFunctionURLRequest) e
 	}
 	model := h.model(vals[0])
 	n := notify.Telegram{Token: vals[2], ChatID: mustEnv("TELEGRAM_CHAT_ID")}
-	archive := s3Archive{client: h.s3, bucket: mustEnv("PAGES_BUCKET")}
+	archive := pages.S3{Client: h.s3, Bucket: mustEnv("PAGES_BUCKET")}
 	j, err := app.Clip(ctx, h.deps, model, n, archive, vals[1], page)
 	switch {
 	case errors.Is(err, app.ErrBadClip):
@@ -359,7 +359,7 @@ func (h *handler) batch(ctx context.Context, r events.LambdaFunctionURLRequest) 
 		return reply(http.StatusInternalServerError, "batch rules are not valid JSON")
 	}
 	n := notify.Telegram{Token: vals[2], ChatID: mustEnv("TELEGRAM_CHAT_ID")}
-	archive := s3Archive{client: h.s3, bucket: mustEnv("PAGES_BUCKET")}
+	archive := pages.S3{Client: h.s3, Bucket: mustEnv("PAGES_BUCKET")}
 	receipt, err := app.SubmitPages(ctx, h.deps, h.model(vals[0]), n, archive, rules, vals[1], req.Pages)
 	if err != nil {
 		h.log.Error("batch", "err", err)
@@ -416,24 +416,6 @@ func requestBody(r events.LambdaFunctionURLRequest, limit int) ([]byte, int) {
 		return nil, http.StatusRequestEntityTooLarge
 	}
 	return body, 0
-}
-
-// s3Archive keeps each batch's pages as one JSON object under batches/.
-// The bucket expires objects after 30 days (infra/pages.tf).
-type s3Archive struct {
-	client *s3.Client
-	bucket string
-}
-
-func (a s3Archive) Save(ctx context.Context, name string, v any) error {
-	body, err := json.Marshal(v)
-	if err != nil {
-		return err
-	}
-	_, err = a.client.PutObject(ctx, &s3.PutObjectInput{
-		Bucket: &a.bucket, Key: &name, Body: bytes.NewReader(body), ContentType: ptr("application/json"),
-	})
-	return err
 }
 
 func reply(status int, msg string) events.LambdaFunctionURLResponse {

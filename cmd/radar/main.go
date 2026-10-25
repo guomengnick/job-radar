@@ -28,6 +28,7 @@ import (
 	"github.com/guomengnick/job-radar/internal/app"
 	"github.com/guomengnick/job-radar/internal/assess"
 	"github.com/guomengnick/job-radar/internal/notify"
+	"github.com/guomengnick/job-radar/internal/pages"
 	"github.com/guomengnick/job-radar/internal/store"
 )
 
@@ -163,12 +164,12 @@ func run(ctx context.Context, log *slog.Logger, cmd string, args []string, state
 		if err != nil {
 			return err
 		}
-		pages, err := newS3Pages(ctx, awsCfg)
+		kept, err := pages.ForAccount(ctx, awsCfg)
 		if err != nil {
 			return err
 		}
-		n, err := app.BackfillJD(ctx, d, pages, pages)
-		fmt.Printf("%d judgements now point at their page in %s\n", n, pages.bucket)
+		n, err := app.BackfillJD(ctx, d, kept, kept)
+		fmt.Printf("%d judgements now point at their page in %s\n", n, kept.Bucket)
 		return err
 	default:
 		return fmt.Errorf("unknown command %q\n%s", cmd, usage)
@@ -195,7 +196,7 @@ func evaluate(ctx context.Context, d app.Deps, labelsPath, profilePath string) e
 	if err != nil {
 		return err
 	}
-	pages, err := newS3Pages(ctx, awsCfg)
+	kept, err := pages.ForAccount(ctx, awsCfg)
 	if err != nil {
 		return err
 	}
@@ -227,7 +228,7 @@ func evaluate(ctx context.Context, d app.Deps, labelsPath, profilePath string) e
 	}
 	fmt.Printf("評估 %d 個職缺，模型 %s，評分檔案：%s\n\n", len(cases), d.Cfg.Assess.Model, source)
 	client := &assess.Client{APIKey: key, Model: d.Cfg.Assess.Model, Effort: d.Cfg.Assess.Effort}
-	rows := app.Evaluate(ctx, d, client, pages, profile, cases)
+	rows := app.Evaluate(ctx, d, client, kept, profile, cases)
 	fmt.Print(app.BuildEvalReport(rows, d.Cfg.Assess.Model))
 	return nil
 }
