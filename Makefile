@@ -1,4 +1,4 @@
-.PHONY: test vet build lambda plan apply check-main deployed eval backfill-jd labels profile clean extension-config
+.PHONY: test vet build lambda plan apply check-main deployed eval backfill-jd labels profile telegram-webhook clean extension-config
 
 test:
 	go test -race ./...
@@ -56,6 +56,10 @@ labels:
 # Point judgements made before pages were kept at their page (once).
 backfill-jd:
 	go run ./cmd/radar backfill-jd
+
+# Send the label buttons pressed in Telegram to the radar (once).
+telegram-webhook:
+	@./scripts/telegram-webhook.sh
 
 # Replace the scoring profile in SSM with a local file, after a diff and a
 # yes: make profile PROFILE=path/profile.md. No deploy needed.
