@@ -5,6 +5,8 @@
 //	radar scan --ats greenhouse [--limit 200] [--silent] [--no-baseline]
 //	radar digest [--dry-run]
 //	radar ingest-file message.eml ...
+//	radar eval --labels labels.csv [--profile draft.md]
+//	radar backfill-jd
 package main
 
 import (
@@ -17,11 +19,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/service/ssm"
 
 	"github.com/guomengnick/job-radar/config"
 	"github.com/guomengnick/job-radar/internal/app"
+	"github.com/guomengnick/job-radar/internal/assess"
 	"github.com/guomengnick/job-radar/internal/notify"
 	"github.com/guomengnick/job-radar/internal/store"
 )
@@ -35,10 +40,17 @@ commands:
                TELEGRAM_CHAT_ID are set, otherwise print it)
   ingest-file  read saved .eml files the way the ingest Lambda reads stored
                mail (keep real messages outside the repository)
+  eval         judge the kept pages of the jobs in --labels again, with the
+               profile in SSM or a draft (--profile), and compare with your
+               labels (CSV: key,want,note; want is 投/看/不 or a score).
+               Each job is one model call, about US$0.03.
+  backfill-jd  point judgements made before pages were kept at their page,
+               found in the batches still archived (30 days)
 
 common flags:
   --state path   local state file (default .radar/state.json)
-  --store s      "file" (default) or "dynamo" (uses TABLE_BOARDS/TABLE_JOBS/TABLE_RUNS)
+  --store s      "file" (default) or "dynamo" (TABLE_BOARDS/TABLE_JOBS/TABLE_RUNS,
+                 default job-radar-*); eval and backfill-jd always use dynamo
   --config path  rules file (default: the embedded config/radar.yml)
   -v             debug logging`
 
@@ -59,6 +71,8 @@ func main() {
 	noBaseline := fs.Bool("no-baseline", false, "scan: notify postings found on a board's first fetch")
 	fromFile := fs.String("from-file", "", "sync-boards: read slugs from a local JSON array")
 	dryRun := fs.Bool("dry-run", false, "digest: print only, keep jobs pending")
+	labels := fs.String("labels", "", "eval: your labels, a CSV with key,want,note")
+	profile := fs.String("profile", "", "eval: a draft profile to test instead of the one in SSM")
 	fs.Parse(os.Args[2:])
 
 	level := slog.LevelInfo
@@ -69,14 +83,17 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	if err := run(ctx, log, cmd, fs.Args(), *statePath, *storeKind, *cfgPath, *atsName, *limit, *silent, *noBaseline, *fromFile, *dryRun); err != nil {
+	if cmd == "eval" || cmd == "backfill-jd" {
+		*storeKind = "dynamo"
+	}
+	if err := run(ctx, log, cmd, fs.Args(), *statePath, *storeKind, *cfgPath, *atsName, *limit, *silent, *noBaseline, *fromFile, *dryRun, *labels, *profile); err != nil {
 		log.Error(cmd+" failed", "err", err)
 		os.Exit(1)
 	}
 }
 
 func run(ctx context.Context, log *slog.Logger, cmd string, args []string, statePath, storeKind, cfgPath, atsName string,
-	limit int, silent, noBaseline bool, fromFile string, dryRun bool) error {
+	limit int, silent, noBaseline bool, fromFile string, dryRun bool, labels, profilePath string) error {
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
 		return err
@@ -139,9 +156,79 @@ func run(ctx context.Context, log *slog.Logger, cmd string, args []string, state
 			fmt.Printf("%s: %s (%s), sender %s, jobs %d, new %d, to send %d\n",
 				path, o.Status, o.Reason, o.Sender, o.Jobs, o.New, o.Pending)
 		}
+	case "eval":
+		return evaluate(ctx, d, labels, profilePath)
+	case "backfill-jd":
+		awsCfg, err := awsconfig.LoadDefaultConfig(ctx)
+		if err != nil {
+			return err
+		}
+		pages, err := newS3Pages(ctx, awsCfg)
+		if err != nil {
+			return err
+		}
+		n, err := app.BackfillJD(ctx, d, pages, pages)
+		fmt.Printf("%d judgements now point at their page in %s\n", n, pages.bucket)
+		return err
 	default:
 		return fmt.Errorf("unknown command %q\n%s", cmd, usage)
 	}
+	return nil
+}
+
+// evaluate runs radar eval. The API key and, unless a draft is given, the
+// profile are read from SSM into memory, never into the environment.
+func evaluate(ctx context.Context, d app.Deps, labelsPath, profilePath string) error {
+	if labelsPath == "" {
+		return fmt.Errorf("eval needs --labels path.csv")
+	}
+	f, err := os.Open(labelsPath)
+	if err != nil {
+		return err
+	}
+	cases, err := app.ParseLabels(f)
+	f.Close()
+	if err != nil {
+		return err
+	}
+	awsCfg, err := awsconfig.LoadDefaultConfig(ctx)
+	if err != nil {
+		return err
+	}
+	pages, err := newS3Pages(ctx, awsCfg)
+	if err != nil {
+		return err
+	}
+	params := ssm.NewFromConfig(awsCfg)
+	param := func(name string) (string, error) {
+		out, err := params.GetParameter(ctx, &ssm.GetParameterInput{Name: &name, WithDecryption: aws.Bool(true)})
+		if err != nil {
+			return "", fmt.Errorf("read parameter %s: %w", name, err)
+		}
+		return aws.ToString(out.Parameter.Value), nil
+	}
+	key, err := param("/job-radar/anthropic-api-key")
+	if err != nil {
+		return err
+	}
+	var profile string
+	if profilePath != "" {
+		b, err := os.ReadFile(profilePath)
+		if err != nil {
+			return err
+		}
+		profile = string(b)
+	} else if profile, err = param("/job-radar/assess-profile"); err != nil {
+		return err
+	}
+	source := "SSM"
+	if profilePath != "" {
+		source = profilePath
+	}
+	fmt.Printf("評估 %d 個職缺，模型 %s，評分檔案：%s\n\n", len(cases), d.Cfg.Assess.Model, source)
+	client := &assess.Client{APIKey: key, Model: d.Cfg.Assess.Model, Effort: d.Cfg.Assess.Effort}
+	rows := app.Evaluate(ctx, d, client, pages, profile, cases)
+	fmt.Print(app.BuildEvalReport(rows, d.Cfg.Assess.Model))
 	return nil
 }
 
@@ -159,8 +246,15 @@ func openStore(ctx context.Context, kind, path string) (store.Store, func() erro
 			return nil, nil, err
 		}
 		st := store.NewDynamo(dynamodb.NewFromConfig(awsCfg),
-			os.Getenv("TABLE_BOARDS"), os.Getenv("TABLE_JOBS"), os.Getenv("TABLE_RUNS"))
+			envOr("TABLE_BOARDS", "job-radar-boards"), envOr("TABLE_JOBS", "job-radar-jobs"), envOr("TABLE_RUNS", "job-radar-runs"))
 		return st, func() error { return nil }, nil
 	}
 	return nil, nil, fmt.Errorf("unknown store %q", kind)
+}
+
+func envOr(k, def string) string {
+	if v := os.Getenv(k); v != "" {
+		return v
+	}
+	return def
 }

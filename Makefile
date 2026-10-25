@@ -1,4 +1,4 @@
-.PHONY: test vet build lambda plan apply check-main deployed clean extension-config
+.PHONY: test vet build lambda plan apply check-main deployed eval backfill-jd clean extension-config
 
 test:
 	go test -race ./...
@@ -42,6 +42,16 @@ endif
 # Which commit each function runs, read from the deployed binaries.
 deployed:
 	@./scripts/deployed.sh
+
+# Judge your labelled jobs again and compare with your labels:
+#   make eval LABELS=path/labels.csv [PROFILE=path/draft-profile.md]
+# One model call per job (about US$0.03). Keep both files outside the repo.
+eval:
+	go run ./cmd/radar eval --labels "$(LABELS)" $(if $(PROFILE),--profile "$(PROFILE)")
+
+# Point judgements made before pages were kept at their page (once).
+backfill-jd:
+	go run ./cmd/radar backfill-jd
 
 clean:
 	rm -rf build
