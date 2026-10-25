@@ -234,7 +234,7 @@ func CheckBatches(ctx context.Context, d Deps, a BatchAssessor, n notify.Notifie
 			continue
 		}
 		done, total := d.storeResults(ctx, b, results)
-		if err := n.Send(ctx, BuildBatchSummary(b, done, total)); err != nil {
+		if err := sendWithButtons(ctx, n, BuildBatchSummary(b, done, total), batchLabelRows(done)); err != nil {
 			errs = append(errs, fmt.Errorf("send batch %s summary: %w", b.BatchID, err))
 			continue
 		}

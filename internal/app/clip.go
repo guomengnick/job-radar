@@ -54,7 +54,11 @@ func Clip(ctx context.Context, d Deps, a Assessor, n notify.Notifier, archive Pa
 		"input_tokens", usage.InputTokens, "output_tokens", usage.OutputTokens,
 		"cache_read_tokens", usage.CacheReadTokens, "cache_write_tokens", usage.CacheWriteTokens)
 
-	if err := n.Send(ctx, BuildAssessment(u.String(), j)+"\n"+usageLine(d.Cfg.Assess.Model, usage, false)); err != nil {
+	var rows [][]notify.Button
+	if row := LabelButtons(key); row != nil {
+		rows = [][]notify.Button{row}
+	}
+	if err := sendWithButtons(ctx, n, BuildAssessment(u.String(), j)+"\n"+usageLine(d.Cfg.Assess.Model, usage, false), rows); err != nil {
 		return j, fmt.Errorf("send assessment: %w", err)
 	}
 	detail, _ := json.Marshal(j)
