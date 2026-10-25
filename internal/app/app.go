@@ -27,7 +27,10 @@ type Deps struct {
 	Springboard *filter.Springboard
 	Log         *slog.Logger
 	Metrics     io.Writer // EMF lines; nil disables
-	Now         func() time.Time
+	// Pages keeps the page of each board job the scan will notify, for the
+	// model to judge after the digest; nil skips it.
+	Pages PageArchive
+	Now   func() time.Time
 }
 
 // NewDeps builds the standard dependency set around a store.

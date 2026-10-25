@@ -3,12 +3,14 @@ package app
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"sort"
 	"sync"
 	"time"
 
 	"golang.org/x/sync/errgroup"
 
+	"github.com/guomengnick/job-radar/internal/assess"
 	"github.com/guomengnick/job-radar/internal/ats"
 	"github.com/guomengnick/job-radar/internal/fetch"
 	"github.com/guomengnick/job-radar/internal/filter"
@@ -218,6 +220,7 @@ func (d Deps) scanBoard(ctx context.Context, src ats.Source, b store.Board, o Sc
 			res.newByClass[string(v.Class)]++
 			if state == store.JobNew {
 				res.pending++
+				d.keepBoardPage(ctx, j)
 			}
 		}
 	}
@@ -240,4 +243,22 @@ func (d Deps) finish(ctx context.Context, run *store.Run, status string, cause e
 		"boards_checked", run.BoardsChecked, "outcomes", run.Outcomes, "jobs_matched", run.JobsMatched,
 		"jobs_new", run.JobsNew, "jobs_pending", run.JobsPending, "seconds", int(run.Duration().Seconds()))
 	return cause
+}
+
+// keepBoardPage keeps a job's posting under the name its judgement will
+// use, the key of its URL (jdName), as 送到雷達 would. A failure is logged:
+// the job is still notified, only not judged.
+func (d Deps) keepBoardPage(ctx context.Context, j ats.Job) {
+	if d.Pages == nil {
+		return
+	}
+	u, err := url.Parse(j.URL)
+	if err != nil || u.Host == "" {
+		return
+	}
+	text := fmt.Sprintf("職稱：%s\n公司：%s\n地點：%s\n\n%s", j.Title, j.Board, j.Location, j.Description)
+	p := assess.Page{URL: j.URL, Title: j.Title + "｜" + j.Board, Text: text}
+	if err := d.Pages.Save(ctx, jdName(clipKey(u)), p); err != nil {
+		d.Log.Error("keep board page", "key", j.Key(), "err", err)
+	}
 }
