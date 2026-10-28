@@ -8,6 +8,7 @@ import (
 	"html"
 	"net/url"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/guomengnick/job-radar/internal/assess"
@@ -97,9 +98,19 @@ func BuildAssessment(pageURL string, j assess.Assessment) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s <b>%d 分｜%s</b>\n", verdictIcons[j.Verdict], j.Score, e(j.Verdict))
 	fmt.Fprintf(&b, "<a href=\"%s\">%s</a>｜%s\n", e(pageURL), e(title), e(j.Company))
-	fmt.Fprintf(&b, "方向 %d/10｜技能 %d/10｜%s｜薪資：%s\n", j.DirectionFit, j.SkillsFit, e(j.CompanyType), e(j.Salary))
+	detail := ""
+	if j.JDDetail >= 0 {
+		detail = fmt.Sprintf("｜JD 具體 %d/10", j.JDDetail)
+	}
+	fmt.Fprintf(&b, "方向 %d/10｜技能 %d/10%s｜%s｜薪資：%s\n", j.DirectionFit, j.SkillsFit, detail, e(j.CompanyType), e(j.Salary))
+	if line := skillsLine(j.RequiredSkills); line != "" {
+		fmt.Fprintf(&b, "技能：%s\n", e(line))
+	}
 	if len(j.RedFlags) > 0 {
 		fmt.Fprintf(&b, "⚠️ %s\n", e(strings.Join(j.RedFlags, "；")))
+	}
+	if len(j.ToConfirm) > 0 {
+		fmt.Fprintf(&b, "❓ 要問清楚：%s\n", e(strings.Join(j.ToConfirm, "；")))
 	}
 	if len(j.Evidence) > 0 {
 		fmt.Fprintf(&b, "依據：「%s」\n", e(strings.Join(j.Evidence, "」「")))
@@ -119,6 +130,27 @@ func BuildAssessment(pageURL string, j assess.Assessment) string {
 		fmt.Fprintf(&b, "👉 <a href=\"%s\">看職缺</a>｜<a href=\"%s\">帶入應徵</a>", e(pageURL), e(apply))
 	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+var hasMark = map[string]string{"有": "✓", "相近": "½", "沒有": "✗"}
+
+// skillsLine shows the required skills that matter, core first: each with
+// its weight and whether the user has it (✓, ½ for a related one, ✗).
+// General skills (Git, English documents) are left out.
+func skillsLine(skills []assess.Skill) string {
+	order := map[string]int{"核心": 0, "硬門檻": 1, "其他必備": 2}
+	var shown []assess.Skill
+	for _, k := range skills {
+		if _, ok := order[k.Weight]; ok {
+			shown = append(shown, k)
+		}
+	}
+	sort.SliceStable(shown, func(i, k int) bool { return order[shown[i].Weight] < order[shown[k].Weight] })
+	parts := make([]string, len(shown))
+	for i, k := range shown {
+		parts[i] = fmt.Sprintf("%s（%s %s）", k.Name, k.Weight, hasMark[k.Has])
+	}
+	return strings.Join(parts, "、")
 }
 
 // ApplyLinkMinScore is the lowest score whose reply carries the 帶入應徵
