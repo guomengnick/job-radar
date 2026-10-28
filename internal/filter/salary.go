@@ -78,20 +78,33 @@ type SalaryFloor struct {
 
 // Check returns "ok", "low", or "unknown" (面議 or unreadable text). 面議
 // only implies at least NT$40k a month by law, so it cannot decide either way.
+//
+// An open-ended figure ("月薪 50,000元以上") states only where pay starts. It
+// passes when the start reaches the floor, and is unknown when the start is
+// at least two thirds of it (NT$47k a month against 70k), since the top can
+// still get there; below that, as with 40,000元以上, it is low.
 func (f SalaryFloor) Check(s Salary) string {
-	top := s.Max
-	if top == 0 {
-		top = s.Min
-	}
+	var floor int
 	switch s.Period {
 	case PayAnnual:
-		return okOrLow(top >= f.Annual)
+		floor = f.Annual
 	case PayMonthly:
-		return okOrLow(top >= f.MonthlyTop)
+		floor = f.MonthlyTop
 	case PayDaily, PayHourly:
 		return "low" // day and hourly rates are part-time or temporary work
+	default:
+		return "unknown"
 	}
-	return "unknown"
+	if s.Max > 0 {
+		return okOrLow(s.Max >= floor)
+	}
+	switch {
+	case s.Min >= floor:
+		return "ok"
+	case 3*s.Min >= 2*floor:
+		return "unknown"
+	}
+	return "low"
 }
 
 func okOrLow(ok bool) string {

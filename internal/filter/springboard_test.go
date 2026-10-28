@@ -33,12 +33,17 @@ func TestSalaryFloor(t *testing.T) {
 	c := mustConfig(t)
 	f := SalaryFloor{Annual: c.Springboard.MinAnnualSalary, MonthlyTop: c.Springboard.MinMonthlyTopPay}
 	tests := map[string]string{
-		"月薪 40,000~60,000元":     "low", // top 60k < 70k
-		"月薪 50,000~70,000元":     "ok",  // top reaches 70k
-		"月薪 40,000元以上":          "low", // the only stated figure is 40k
+		"月薪 40,000~60,000元":     "low",     // top 60k < 70k
+		"月薪 50,000~70,000元":     "ok",      // top reaches 70k
+		"月薪 40,000元以上":          "low",     // starts far below the floor
+		"月薪 46,000元以上":          "low",     // just under two thirds of 70k
+		"月薪 47,000元以上":          "unknown", // the top may still reach 70k
+		"月薪 50,000元以上":          "unknown",
 		"月薪 70,000元以上":          "ok",
 		"年薪 800,000~950,000元":   "low",
 		"年薪 900,000~1,200,000元": "ok",
+		"年薪 600,000元以上":         "low",
+		"年薪 700,000元以上":         "unknown",
 		"年薪 1,000,000元以上":       "ok",
 		"時薪 500元":               "low",
 		"待遇面議":                  "unknown",
