@@ -1,12 +1,15 @@
 {
   "manifest_version": 3,
   "name": "送到雷達",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "把職缺頁送到 job-radar 評分（單頁或批次），每天早上提醒新的 104 職缺並一鍵開啟，也能從 Telegram 帶入 104 應徵表單（由你自己送出）。",
   "icons": { "16": "icon16.png", "48": "icon48.png", "128": "icon128.png" },
   "action": { "default_title": "送到雷達", "default_popup": "popup.html", "default_icon": { "16": "icon16.png", "48": "icon48.png" }},
   "background": { "service_worker": "background.js" },
-  "content_scripts": [{ "matches": ["https://www.104.com.tw/job/*"], "js": ["apply.js"], "run_at": "document_start" }],
+  "content_scripts": [
+    { "matches": ["https://www.104.com.tw/job/*"], "exclude_matches": ["https://www.104.com.tw/job/apply/*"], "js": ["apply.js"], "run_at": "document_start" },
+    { "matches": ["https://www.104.com.tw/job/apply/done/*"], "js": ["done.js"], "run_at": "document_idle" }
+  ],
   "options_page": "options.html",
   "permissions": ["activeTab", "scripting", "storage", "tabs", "alarms", "notifications"],
   "host_permissions": ["https://*.lambda-url.ap-southeast-2.on.aws/*", "https://www.104.com.tw/*"]
