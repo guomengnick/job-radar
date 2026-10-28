@@ -27,20 +27,32 @@ type Page struct {
 
 // Assessment is the model's judgement, checked and clamped by Assess.
 type Assessment struct {
-	JobTitle     string   `json:"job_title"`
-	Company      string   `json:"company"`
-	Score        int      `json:"score"`         // 0–100
-	Verdict      string   `json:"verdict"`       // 建議投 | 可考慮 | 不建議
-	DirectionFit int      `json:"direction_fit"` // 0–10: online service, cloud or data platform
-	SkillsFit    int      `json:"skills_fit"`    // 0–10
-	CompanyType  string   `json:"company_type"`  // see companyTypes
-	Salary       string   `json:"salary"`        // as posted, or 未寫
-	RedFlags     []string `json:"red_flags"`
-	Evidence     []string `json:"evidence"` // short quotes from the posting
-	Resume       string   `json:"resume"`   // A | B | C
-	AddMLLine    bool     `json:"add_ml_line"`
-	LetterLine   string   `json:"letter_line"`
-	Reason       string   `json:"reason"`
+	JobTitle     string `json:"job_title"`
+	Company      string `json:"company"`
+	Score        int    `json:"score"`         // 0–100
+	Verdict      string `json:"verdict"`       // 建議投 | 可考慮 | 不建議
+	DirectionFit int    `json:"direction_fit"` // 0–10: how well the work fits the profile's direction
+	SkillsFit    int    `json:"skills_fit"`    // 0–10
+	// RequiredSkills are the posting's required skills, each with how much
+	// the job rests on it and whether the user has it.
+	RequiredSkills []Skill  `json:"required_skills"`
+	JDDetail       int      `json:"jd_detail"`    // 0–10: how concretely the posting says what the work is
+	CompanyType    string   `json:"company_type"` // see companyTypes
+	Salary         string   `json:"salary"`       // as posted, or 未寫
+	RedFlags       []string `json:"red_flags"`    // only what would stop an application
+	ToConfirm      []string `json:"to_confirm"`   // what to ask, short of a red flag
+	Evidence       []string `json:"evidence"`     // short quotes from the posting
+	Resume         string   `json:"resume"`       // A | B | C
+	AddMLLine      bool     `json:"add_ml_line"`
+	LetterLine     string   `json:"letter_line"`
+	Reason         string   `json:"reason"`
+}
+
+// Skill is one required skill of a posting.
+type Skill struct {
+	Name   string `json:"name"`
+	Weight string `json:"weight"` // 核心 | 其他必備 | 一般 | 硬門檻
+	Has    string `json:"has"`    // 有 | 相近 | 沒有
 }
 
 // Usage is what one call consumed, for the cost log.
@@ -59,6 +71,8 @@ var (
 	verdicts     = []string{"建議投", "可考慮", "不建議"}
 	companyTypes = []string{"自有產品", "大公司軟體部門", "外包派遣", "系統整合", "不明"}
 	resumes      = []string{"A", "B", "C"}
+	skillWeights = []string{"核心", "其他必備", "一般", "硬門檻"}
+	skillHas     = []string{"有", "相近", "沒有"}
 )
 
 // Client calls the Anthropic Messages API through the official Go SDK,
@@ -114,7 +128,8 @@ func Read(msg *anthropic.Message) (Assessment, Usage, error) {
 	}
 	for _, b := range msg.Content {
 		if t, ok := b.AsAny().(anthropic.ToolUseBlock); ok && t.Name == toolName {
-			var a Assessment
+			// -1 tells a jd_detail the model left out from one it gave as 0.
+			a := Assessment{JDDetail: -1}
 			if err := json.Unmarshal(t.Input, &a); err != nil {
 				return Assessment{}, u, fmt.Errorf("anthropic: decode assessment: %w", err)
 			}
@@ -167,21 +182,53 @@ func (c Client) request(profile string, p Page) request {
 	return r
 }
 
-// clean keeps every field inside its allowed range, whatever the model sent.
+// sparseJD is the jd_detail at or under which a posting says too little to
+// score high; sparseCap is the most it can score then.
+const (
+	sparseJD  = 3
+	sparseCap = 65
+	coreCap   = 3 // the most skills_fit when a core skill is missing
+)
+
+// clean keeps every field inside its allowed range, whatever the model sent,
+// and holds the rubric's two caps: a missing core skill keeps skills_fit at
+// coreCap, a sparse posting keeps the score at sparseCap. The verdict follows
+// the score, as the rubric defines it.
 func (a Assessment) clean() Assessment {
 	a.Score = clamp(a.Score, 0, 100)
 	a.DirectionFit = clamp(a.DirectionFit, 0, 10)
 	a.SkillsFit = clamp(a.SkillsFit, 0, 10)
-	if !slices.Contains(verdicts, a.Verdict) {
-		a.Verdict = verdictFor(a.Score)
+	a.JDDetail = clamp(a.JDDetail, -1, 10) // -1: not given
+	var skills []Skill
+	for _, k := range a.RequiredSkills {
+		k.Name = strings.TrimSpace(k.Name)
+		if k.Name == "" || len(skills) == 12 {
+			continue
+		}
+		if !slices.Contains(skillWeights, k.Weight) {
+			k.Weight = "其他必備"
+		}
+		if !slices.Contains(skillHas, k.Has) {
+			k.Has = "沒有"
+		}
+		if k.Weight == "核心" && k.Has == "沒有" {
+			a.SkillsFit = min(a.SkillsFit, coreCap)
+		}
+		skills = append(skills, k)
 	}
+	a.RequiredSkills = skills
+	if a.JDDetail >= 0 && a.JDDetail <= sparseJD {
+		a.Score = min(a.Score, sparseCap)
+	}
+	a.Verdict = verdictFor(a.Score)
 	if !slices.Contains(companyTypes, a.CompanyType) {
 		a.CompanyType = "不明"
 	}
 	if !slices.Contains(resumes, a.Resume) {
 		a.Resume = "A"
 	}
-	a.RedFlags = limit(a.RedFlags, 5)
+	a.RedFlags = limit(a.RedFlags, 3)
+	a.ToConfirm = limit(a.ToConfirm, 3)
 	a.Evidence = limit(a.Evidence, 4)
 	for _, s := range []*string{&a.JobTitle, &a.Company, &a.Salary, &a.LetterLine, &a.Reason} {
 		*s = strings.TrimSpace(*s)

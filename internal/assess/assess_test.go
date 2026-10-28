@@ -38,8 +38,10 @@ func (f *fakeAPI) serve(t *testing.T) *httptest.Server {
 
 const goodReply = `{"content":[{"type":"tool_use","name":"record_assessment","input":{
   "job_title":"資深後端工程師","company":"範例科技","score":82,"verdict":"建議投",
-  "direction_fit":8,"skills_fit":7,"company_type":"自有產品","salary":"月薪 60,000~90,000元",
-  "red_flags":["要求 Kubernetes"],"evidence":["負責自家 SaaS 的後端 API","使用 C# 與 PostgreSQL"],
+  "direction_fit":8,"skills_fit":7,"jd_detail":7,
+  "required_skills":[{"name":"C#","weight":"核心","has":"有"},{"name":"Kubernetes","weight":"其他必備","has":"相近"}],
+  "company_type":"自有產品","salary":"月薪 60,000~90,000元",
+  "red_flags":[],"to_confirm":["Kubernetes 實際用多少"],"evidence":["負責自家 SaaS 的後端 API","使用 C# 與 PostgreSQL"],
   "resume":"C","add_ml_line":false,"letter_line":"這個職缺需要 C# 後端，跟我的經驗直接相關。","reason":"自家 SaaS，技能對得上"}}],
   "usage":{"input_tokens":3100,"output_tokens":420,"cache_read_input_tokens":1500,"cache_creation_input_tokens":0}}`
 
@@ -60,7 +62,8 @@ func TestAssess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if a.Score != 82 || a.Verdict != "建議投" || a.Resume != "C" || len(a.Evidence) != 2 || a.Company != "範例科技" {
+	if a.Score != 82 || a.Verdict != "建議投" || a.Resume != "C" || len(a.Evidence) != 2 || a.Company != "範例科技" ||
+		a.JDDetail != 7 || len(a.RequiredSkills) != 2 || a.RequiredSkills[1].Has != "相近" || len(a.ToConfirm) != 1 {
 		t.Errorf("assessment = %+v", a)
 	}
 	if u.InputTokens != 3100 || u.OutputTokens != 420 || u.CacheReadTokens != 1500 {
@@ -109,9 +112,34 @@ func TestAssessCleansTheReply(t *testing.T) {
 		t.Fatal(err)
 	}
 	if a.Score != 100 || a.Verdict != "建議投" || a.DirectionFit != 0 || a.SkillsFit != 10 ||
-		a.CompanyType != "不明" || a.Salary != "未寫" || len(a.RedFlags) != 5 || len(a.Evidence) != 4 ||
-		a.Resume != "A" || a.Reason != "ok" {
+		a.CompanyType != "不明" || a.Salary != "未寫" || len(a.RedFlags) != 3 || len(a.Evidence) != 4 ||
+		a.Resume != "A" || a.Reason != "ok" || a.JDDetail != -1 {
 		t.Errorf("cleaned = %+v", a)
+	}
+}
+
+func TestCleanHoldsTheCaps(t *testing.T) {
+	for _, c := range []struct {
+		name          string
+		in            Assessment
+		score, skills int
+		verdict       string
+	}{
+		{"sparse posting", Assessment{Score: 80, SkillsFit: 8, JDDetail: 2}, 65, 8, "可考慮"},
+		{"detailed posting", Assessment{Score: 80, SkillsFit: 8, JDDetail: 7}, 80, 8, "建議投"},
+		{"detail not given", Assessment{Score: 80, SkillsFit: 8, JDDetail: -1}, 80, 8, "建議投"},
+		{"core missing", Assessment{Score: 50, SkillsFit: 7, JDDetail: 6, RequiredSkills: []Skill{{Name: "Kubernetes", Weight: "核心", Has: "沒有"}}}, 50, 3, "不建議"},
+		{"other missing", Assessment{Score: 70, SkillsFit: 7, JDDetail: 6, RequiredSkills: []Skill{{Name: "Kubernetes", Weight: "其他必備", Has: "沒有"}}}, 70, 7, "可考慮"},
+		{"verdict follows the score", Assessment{Score: 40, Verdict: "建議投", JDDetail: 6}, 40, 0, "不建議"},
+	} {
+		got := c.in.clean()
+		if got.Score != c.score || got.SkillsFit != c.skills || got.Verdict != c.verdict {
+			t.Errorf("%s: score %d skills %d verdict %s", c.name, got.Score, got.SkillsFit, got.Verdict)
+		}
+	}
+	odd := Assessment{RequiredSkills: []Skill{{Name: " ", Weight: "核心"}, {Name: "Go", Weight: "很重要", Has: "會"}}}.clean()
+	if len(odd.RequiredSkills) != 1 || odd.RequiredSkills[0].Weight != "其他必備" || odd.RequiredSkills[0].Has != "沒有" {
+		t.Errorf("odd skills = %+v", odd.RequiredSkills)
 	}
 }
 
