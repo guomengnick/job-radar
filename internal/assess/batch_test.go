@@ -3,6 +3,8 @@ package assess
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -71,10 +73,29 @@ func TestBatch(t *testing.T) {
 	if r := res[0]; r.ID != "p0" || r.Err != nil || r.Assessment.Score != 82 || r.Usage.InputTokens != 3100 {
 		t.Errorf("succeeded: %+v", r)
 	}
-	if r := res[1]; r.ID != "p1" || r.Err == nil || !strings.Contains(r.Err.Error(), "prompt is too long") {
+	if r := res[1]; r.ID != "p1" || r.Err == nil || !strings.Contains(r.Err.Error(), "prompt is too long") || ClassOf(r.Err) != Permanent {
 		t.Errorf("errored: %+v", r)
 	}
-	if r := res[2]; r.Err == nil || !strings.Contains(r.Err.Error(), "24 hours") {
+	if r := res[2]; r.Err == nil || !strings.Contains(r.Err.Error(), "24 hours") || ClassOf(r.Err) != Transient {
 		t.Errorf("expired: %+v", r)
+	}
+}
+
+func TestClassOf(t *testing.T) {
+	for errType, want := range map[string]Class{
+		"invalid_request_error": Permanent, "billing_error": Permanent,
+		"overloaded_error": Transient, "rate_limit_error": Transient, "api_error": Transient,
+		"something_new": Unknown,
+	} {
+		if got := ClassOf(apiError(errType, "x")); got != want {
+			t.Errorf("%s → %s, want %s", errType, got, want)
+		}
+	}
+	if ClassOf(errors.New("plain")) != Unknown || ClassOf(ErrNoAssessment) != Unknown {
+		t.Error("an error without a class is unknown")
+	}
+	wrapped := fmt.Errorf("batch: %w", apiError("overloaded_error", "busy"))
+	if ClassOf(wrapped) != Transient {
+		t.Error("the class survives wrapping")
 	}
 }

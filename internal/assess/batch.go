@@ -70,11 +70,11 @@ func (c Client) Results(ctx context.Context, batchID string) ([]Result, error) {
 		case anthropic.MessageBatchSucceededResult:
 			res.Assessment, res.Usage, res.Err = Read(&v.Message)
 		case anthropic.MessageBatchErroredResult:
-			res.Err = fmt.Errorf("anthropic: %s", v.Error.Error.Message)
+			res.Err = apiError(v.Error.Error.Type, v.Error.Error.Message)
 		case anthropic.MessageBatchExpiredResult:
-			res.Err = errors.New("anthropic: not processed within 24 hours")
+			res.Err = &ClassError{Class: Transient, Err: errors.New("anthropic: not processed within 24 hours")}
 		default:
-			res.Err = fmt.Errorf("anthropic: result %q", r.Result.Type)
+			res.Err = &ClassError{Class: Unknown, Err: fmt.Errorf("anthropic: result %q", r.Result.Type)}
 		}
 		out = append(out, res)
 	}
