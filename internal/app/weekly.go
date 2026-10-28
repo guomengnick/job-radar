@@ -16,7 +16,8 @@ import (
 const week = 7 * 24 * time.Hour
 
 // Weekly sends Sunday's report: what the week brought (new board jobs and
-// 104 jobs, by where they ended up), who reached out, and how the runs went.
+// 104 jobs, by where they ended up), what the user applied to, who reached
+// out, and how the runs went.
 // It reads only what the digest reads, so it needs no new permissions.
 func Weekly(ctx context.Context, d Deps, n notify.Notifier, loc *time.Location) (string, error) {
 	now := d.Now()
@@ -33,12 +34,16 @@ func Weekly(ctx context.Context, d Deps, n notify.Notifier, loc *time.Location) 
 	if err != nil {
 		return "", err
 	}
-	msg := BuildWeekly(now.In(loc), runs, alert, contacts)
+	applied, err := d.Store.JobsSince(ctx, appliedATS, since)
+	if err != nil {
+		return "", err
+	}
+	msg := BuildWeekly(now.In(loc), runs, alert, contacts, applied)
 	return msg, n.Send(ctx, msg)
 }
 
 // BuildWeekly renders the weekly report (Telegram HTML).
-func BuildWeekly(now time.Time, runs []store.Run, alert []ListedJob, contacts []store.JobRecord) string {
+func BuildWeekly(now time.Time, runs []store.Run, alert []ListedJob, contacts, applied []store.JobRecord) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "<b>🗓 雷達週報 %s–%s</b>\n", now.Add(-week).Format("01/02"), now.Format("01/02"))
 
@@ -85,6 +90,11 @@ func BuildWeekly(now time.Time, runs []store.Run, alert []ListedJob, contacts []
 	fmt.Fprintf(&b, "\n<b>104 配對信：%d 封、%d 個職缺</b>\n", mail, len(alert))
 	fmt.Fprintf(&b, "日報有列 %d｜台中以外 %d｜規則排除 %d\n", groups[GroupDigest], groups[GroupElsewhere], groups[GroupExcluded])
 
+	fmt.Fprintf(&b, "\n<b>📮 這週投了 %d 家</b>\n", len(applied))
+	for _, a := range applied {
+		fmt.Fprintf(&b, "%s｜%s\n", html.EscapeString(a.Board), html.EscapeString(truncate(a.Title, 40)))
+	}
+
 	kinds := map[string][]string{}
 	for _, c := range contacts {
 		kinds[c.Reason] = append(kinds[c.Reason], c.Board)
@@ -101,7 +111,7 @@ func BuildWeekly(now time.Time, runs []store.Run, alert []ListedJob, contacts []
 	if len(contacts) == 0 {
 		b.WriteString("這週沒有。\n")
 	}
-	b.WriteString("\n投了哪些、進度如何，在投遞清單裡更新。")
+	b.WriteString("\n投遞是擴充功能從 104「應徵成功」頁記下的；之後的進度在投遞清單更新。")
 	return b.String()
 }
 
