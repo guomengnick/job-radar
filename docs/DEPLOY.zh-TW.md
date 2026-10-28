@@ -277,6 +277,25 @@ gh secret set TF_VAR_MAIL_DOMAIN
 
 `make apply` 還是可以用（例如 GitHub 掛了）；兩條路改的是同一份 Terraform 狀態。
 
+### 失敗了怎麼辦：DLQ
+
+重試也救不回來的東西會進死信佇列（DLQ，`job-radar-dlq`，保存 14 天），Telegram 會收到「🚨 告警：job-radar-dlq-not-empty」：
+
+- AI 評分：永久錯誤直接進來；暫時錯誤自動重試 2 次後才進來。批次總表上每一筆失敗都寫了去向。
+- 背景函式（掃描、日報、收信、告警…）：Lambda 自己重試完還是失敗，AWS 把原本的事件和錯誤送進來。
+
+先看裡面是什麼（只讀，看完放回去）：
+
+```bash
+AWS_PROFILE=radar make dlq
+```
+
+修好原因之後（例如 Telegram 恢復了、改了程式並部署），全部重送：會先列出來，輸入 `yes` 才動。背景函式用原本的事件再跑一次；評分從存下來的 JD 重新送一批。重送出去的才從 DLQ 刪掉。
+
+```bash
+AWS_PROFILE=radar make redrive
+```
+
 ## 6. 第一次載入看板，並建立基準線
 
 ```bash

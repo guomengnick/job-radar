@@ -1,4 +1,4 @@
-.PHONY: test vet build lambda plan apply check-main deployed eval backfill-jd labels profile telegram-webhook clean extension-config
+.PHONY: test vet build lambda plan apply check-main deployed eval backfill-jd labels profile telegram-webhook dlq redrive clean extension-config
 
 test:
 	go test -race ./...
@@ -56,6 +56,13 @@ labels:
 # Point judgements made before pages were kept at their page (once).
 backfill-jd:
 	go run ./cmd/radar backfill-jd
+
+# What is in the dead-letter queue, and sending it again (after a yes).
+dlq:
+	@go run ./cmd/radar dlq
+
+redrive:
+	@go run ./cmd/radar redrive
 
 # Send the label buttons pressed in Telegram to the radar (once).
 telegram-webhook:
