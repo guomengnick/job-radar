@@ -8,6 +8,8 @@
 //	radar eval --labels labels.csv|telegram [--profile draft.md]
 //	radar backfill-jd
 //	radar labels > labels.csv
+//	radar dlq
+//	radar redrive
 package main
 
 import (
@@ -24,11 +26,15 @@ import (
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
+	"github.com/aws/aws-sdk-go-v2/service/lambda"
+	lambdatypes "github.com/aws/aws-sdk-go-v2/service/lambda/types"
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 
 	"github.com/guomengnick/job-radar/config"
 	"github.com/guomengnick/job-radar/internal/app"
 	"github.com/guomengnick/job-radar/internal/assess"
+	"github.com/guomengnick/job-radar/internal/dlq"
 	"github.com/guomengnick/job-radar/internal/notify"
 	"github.com/guomengnick/job-radar/internal/pages"
 	"github.com/guomengnick/job-radar/internal/store"
@@ -52,6 +58,9 @@ commands:
                found in the batches still archived (30 days)
   labels       print a labels file for eval: the jobs judged from the
                archived batches, best first, with want left for you to fill
+  dlq          list what is in the dead-letter queue
+  redrive      send the dead letters again, after a yes: failed runs are
+               started again, judgements go out as one new batch
 
 common flags:
   --state path   local state file (default .radar/state.json)
@@ -89,7 +98,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
-	if cmd == "eval" || cmd == "backfill-jd" || cmd == "labels" {
+	if cmd == "eval" || cmd == "backfill-jd" || cmd == "labels" || cmd == "dlq" || cmd == "redrive" {
 		*storeKind = "dynamo"
 	}
 	if err := run(ctx, log, cmd, fs.Args(), *statePath, *storeKind, *cfgPath, *atsName, *limit, *silent, *noBaseline, *fromFile, *dryRun, *labels, *profile); err != nil {
@@ -164,6 +173,8 @@ func run(ctx context.Context, log *slog.Logger, cmd string, args []string, state
 		}
 	case "eval":
 		return evaluate(ctx, d, labels, profilePath)
+	case "dlq", "redrive":
+		return deadLetters(ctx, d, cmd == "redrive")
 	case "labels":
 		awsCfg, err := awsconfig.LoadDefaultConfig(ctx)
 		if err != nil {
@@ -288,4 +299,83 @@ func envOr(k, def string) string {
 		return v
 	}
 	return def
+}
+
+// deadLetters lists the dead-letter queue and, for redrive, sends it again
+// after the user types yes. Reading hides the messages for two minutes,
+// which redrive needs to delete them; a plain list puts them back at once.
+func deadLetters(ctx context.Context, d app.Deps, redrive bool) error {
+	awsCfg, err := awsconfig.LoadDefaultConfig(ctx)
+	if err != nil {
+		return err
+	}
+	client := sqs.NewFromConfig(awsCfg)
+	url, err := client.GetQueueUrl(ctx, &sqs.GetQueueUrlInput{QueueName: aws.String("job-radar-dlq")})
+	if err != nil {
+		return fmt.Errorf("find the dead-letter queue: %w", err)
+	}
+	q := dlq.Queue{Client: client, URL: aws.ToString(url.QueueUrl)}
+	msgs, err := q.Peek(ctx, 100, 120)
+	if err != nil {
+		return err
+	}
+	letters := make([]app.DeadLetter, len(msgs))
+	for i, m := range msgs {
+		letters[i] = app.ReadDeadLetter(m)
+		fmt.Println(letters[i].Line())
+	}
+	if len(msgs) == 0 {
+		fmt.Println("DLQ 是空的。")
+		return nil
+	}
+	fmt.Printf("\n共 %d 則。\n", len(msgs))
+	if !redrive {
+		for _, m := range msgs {
+			q.Release(ctx, m)
+		}
+		fmt.Println("修好原因之後，用 make redrive 重送。")
+		return nil
+	}
+	fmt.Print("要全部重送嗎？輸入 yes：")
+	var answer string
+	fmt.Scanln(&answer)
+	if answer != "yes" {
+		fmt.Println("沒有重送。兩分鐘後它們會回到佇列。")
+		return nil
+	}
+	kept, err := pages.ForAccount(ctx, awsCfg)
+	if err != nil {
+		return err
+	}
+	params := ssm.NewFromConfig(awsCfg)
+	param := func(name string) (string, error) {
+		out, err := params.GetParameter(ctx, &ssm.GetParameterInput{Name: &name, WithDecryption: aws.Bool(true)})
+		if err != nil {
+			return "", fmt.Errorf("read parameter %s: %w", name, err)
+		}
+		return aws.ToString(out.Parameter.Value), nil
+	}
+	key, err := param("/job-radar/anthropic-api-key")
+	if err != nil {
+		return err
+	}
+	profile, err := param("/job-radar/assess-profile")
+	if err != nil {
+		return err
+	}
+	model := &assess.Client{APIKey: key, Model: d.Cfg.Assess.Model, Effort: d.Cfg.Assess.Effort}
+	report, err := app.Redrive(ctx, d, q, lambdaInvoker{lambda.NewFromConfig(awsCfg)}, model,
+		notify.Writer{W: os.Stdout}, kept, profile, letters)
+	for _, line := range report {
+		fmt.Println(line)
+	}
+	return err
+}
+
+// lambdaInvoker starts a function the way the scheduler does: asynchronously.
+type lambdaInvoker struct{ c *lambda.Client }
+
+func (l lambdaInvoker) InvokeAsync(ctx context.Context, function string, payload []byte) error {
+	_, err := l.c.Invoke(ctx, &lambda.InvokeInput{FunctionName: &function, Payload: payload, InvocationType: lambdatypes.InvocationTypeEvent})
+	return err
 }
