@@ -161,7 +161,8 @@ springboard:
   title_exclude: [plc, 韌體, 電控, 硬體, 機構, 助理, 實習, 工讀, 業務, 儲備幹部, 客服, 講師, 行銷, 行政, 人資, 校園徵才, 現場工程師]
   # "Pay clearly above the current NT$880k", on the top of the posted range:
   # NT$1M a year, or a monthly range reaching NT$70k (1M / 14 months).
-  # 面議 only implies NT$40k a month or more, so it is listed as unknown.
+  # 面議 only implies NT$40k a month or more, so it is listed as unknown, and
+  # so is an open-ended 以上 that starts at two thirds of the floor or more.
   min_annual_salary: 1000000
   min_monthly_top_pay: 70000
   # Tagged, not dropped: the user judges these by hand (2026-10-19). 104
