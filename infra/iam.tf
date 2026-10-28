@@ -57,7 +57,6 @@ locals {
       { actions = ["dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:GetItem"], resources = [aws_dynamodb_table.jobs.arn] },
       { actions = ["s3:GetObject"], resources = ["${aws_s3_bucket.pages.arn}/jd/*"] },
       { actions = ["s3:PutObject"], resources = ["${aws_s3_bucket.pages.arn}/batches/*", "${aws_s3_bucket.pages.arn}/jd/*"] },
-      { actions = ["sqs:SendMessage"], resources = [aws_sqs_queue.dlq.arn] },
     ]
     # Read the bot token, nothing else: it only forwards alarm messages.
     alarm = [
@@ -80,6 +79,16 @@ data "aws_iam_policy_document" "fn" {
   statement {
     actions   = ["logs:CreateLogStream", "logs:PutLogEvents"]
     resources = ["arn:aws:logs:${var.region}:${data.aws_caller_identity.me.account_id}:log-group:/aws/lambda/job-radar-${each.key}:*"]
+  }
+
+  # Lambda sends a failed asynchronous run to the dead-letter queue with
+  # the function's own role (destination_config in lambda.tf).
+  dynamic "statement" {
+    for_each = each.key == "clip" ? [] : [1]
+    content {
+      actions   = ["sqs:SendMessage"]
+      resources = [aws_sqs_queue.dlq.arn]
+    }
   }
 
   dynamic "statement" {

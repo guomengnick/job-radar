@@ -84,6 +84,19 @@ resource "aws_lambda_function_event_invoke_config" "fn" {
   for_each               = local.functions
   function_name          = aws_lambda_function.fn[each.key].function_name
   maximum_retry_attempts = each.value.retries
+
+  # An asynchronous run (the scheduler, S3, SNS) that still fails after
+  # those retries goes to the dead-letter queue: AWS sends the original
+  # event and the error, and radar redrive can run it again. clip answers
+  # the extension synchronously and has no such runs.
+  dynamic "destination_config" {
+    for_each = each.key == "clip" ? [] : [1]
+    content {
+      on_failure {
+        destination = aws_sqs_queue.dlq.arn
+      }
+    }
+  }
 }
 
 # The 送到雷達 endpoint. The URL is public (the extension cannot sign AWS
