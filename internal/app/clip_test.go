@@ -27,8 +27,10 @@ func (f *fakeAssessor) Assess(_ context.Context, profile string, p assess.Page) 
 
 var judged = assess.Assessment{
 	JobTitle: "資深後端工程師 <.NET>", Company: "範例科技", Score: 82, Verdict: "建議投",
-	DirectionFit: 8, SkillsFit: 7, CompanyType: "自有產品", Salary: "月薪 60,000~90,000元",
-	RedFlags: []string{"要求 Kubernetes"}, Evidence: []string{"自家 SaaS", "C# 與 PostgreSQL"},
+	DirectionFit: 8, SkillsFit: 7, JDDetail: 7, CompanyType: "自有產品", Salary: "月薪 60,000~90,000元",
+	RequiredSkills: []assess.Skill{{Name: "Git", Weight: "一般", Has: "有"}, {Name: "Java", Weight: "其他必備", Has: "相近"},
+		{Name: "C#", Weight: "核心", Has: "有"}, {Name: "5 年經驗", Weight: "硬門檻", Has: "有"}},
+	RedFlags: []string{"要求 Kubernetes"}, ToConfirm: []string{"薪資上限", "Java 用多少"}, Evidence: []string{"自家 SaaS", "C# 與 PostgreSQL"},
 	Resume: "C", AddMLLine: true, LetterLine: "這個職缺需要 C# 後端，跟我的經驗直接相關。", Reason: "自家產品，技能對得上",
 }
 
@@ -49,7 +51,9 @@ func TestClip(t *testing.T) {
 	for _, want := range []string{
 		"🟢 <b>82 分｜建議投</b>",
 		`<a href="https://www.104.com.tw/job/aaa01?jobsource=match_mail">資深後端工程師 &lt;.NET&gt;</a>｜範例科技`,
-		"方向 8/10｜技能 7/10｜自有產品｜薪資：月薪 60,000~90,000元",
+		"方向 8/10｜技能 7/10｜JD 具體 7/10｜自有產品｜薪資：月薪 60,000~90,000元",
+		"技能：C#（核心 ✓）、5 年經驗（硬門檻 ✓）、Java（其他必備 ½）",
+		"❓ 要問清楚：薪資上限；Java 用多少",
 		"⚠️ 要求 Kubernetes",
 		"依據：「自家 SaaS」「C# 與 PostgreSQL」",
 		"📄 履歷用 C 版，加 ML 那條",
