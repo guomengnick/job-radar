@@ -46,9 +46,10 @@ locals {
       { actions = ["dynamodb:Query"], resources = ["${aws_dynamodb_table.jobs.arn}/index/source-index"] },
       { actions = ["s3:PutObject"], resources = ["${aws_s3_bucket.pages.arn}/batches/*", "${aws_s3_bucket.pages.arn}/jd/*"] },
     ]
-    # Find open batches; store their judgements and close them. Once a day,
-    # list the new board jobs, read the pages the scan kept, look up earlier
-    # judgements, and keep the batch it sends.
+    # Find open batches; store their judgements and close them; batch failed
+    # ones again from their kept pages, or put them in the dead-letter
+    # queue. Once a day, list the new board jobs, read the pages the scan
+    # kept, look up earlier judgements, and keep the batch it sends.
     batch = [
       { actions = ["ssm:GetParameter"], resources = [for p in [var.anthropic_key_param, var.telegram_token_param, var.assess_profile_param] :
       "arn:aws:ssm:${var.region}:${data.aws_caller_identity.me.account_id}:parameter${p}"] },
@@ -56,6 +57,7 @@ locals {
       { actions = ["dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:GetItem"], resources = [aws_dynamodb_table.jobs.arn] },
       { actions = ["s3:GetObject"], resources = ["${aws_s3_bucket.pages.arn}/jd/*"] },
       { actions = ["s3:PutObject"], resources = ["${aws_s3_bucket.pages.arn}/batches/*", "${aws_s3_bucket.pages.arn}/jd/*"] },
+      { actions = ["sqs:SendMessage"], resources = [aws_sqs_queue.dlq.arn] },
     ]
     # Read the bot token, nothing else: it only forwards alarm messages.
     alarm = [
