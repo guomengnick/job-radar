@@ -24,7 +24,9 @@ func (m *memLetters) Send(_ context.Context, l Letter) error {
 	return nil
 }
 
-func classed(c assess.Class, msg string) error { return &assess.ClassError{Class: c, Err: errors.New(msg)} }
+func classed(c assess.Class, msg string) error {
+	return &assess.ClassError{Class: c, Err: errors.New(msg)}
+}
 
 func TestFailedJudgementsRetryThenDeadLetter(t *testing.T) {
 	ctx := context.Background()
