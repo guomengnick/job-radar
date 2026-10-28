@@ -1,6 +1,8 @@
-# The dead-letter queue: what failed and will not be retried automatically
-# (a judgement with a permanent error, or one that failed every retry),
-# kept for 14 days with what it takes to send it again (radar redrive).
+# The dead-letter queue: what failed and will not be retried automatically,
+# kept for 14 days with what it takes to send it again (radar redrive):
+# a judgement with a permanent error, or one that failed every retry (the
+# batch function sends those), and an asynchronous Lambda run that failed
+# after its retries (Lambda sends those: the original event and the error).
 # The batch summary names each one as it goes in; the alarm below says the
 # queue is not empty, so nothing waits there unnoticed.
 resource "aws_sqs_queue" "dlq" {
