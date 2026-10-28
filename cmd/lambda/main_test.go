@@ -118,6 +118,9 @@ func TestServeGate(t *testing.T) {
 		{"batch too large", req("/batch POST", "right-secret", strings.Repeat("x", maxBatchBytes+1), false), http.StatusRequestEntityTooLarge},
 		{"batch with no pages", req("/batch POST", "right-secret", `{"pages":[]}`, false), http.StatusBadRequest},
 		{"batch not JSON", req("/batch POST", "right-secret", `[`, false), http.StatusBadRequest},
+		{"GET applied", req("/applied GET", "right-secret", "", false), http.StatusMethodNotAllowed},
+		{"applied without secret", req("/applied POST", "", `{"code":"95o88"}`, false), http.StatusUnauthorized},
+		{"applied not JSON", req("/applied POST", "right-secret", `{`, false), http.StatusBadRequest},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

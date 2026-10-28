@@ -9,8 +9,9 @@
 // ingest is invoked by S3 when SES stores a message, and clip through its
 // function URL by the 送到雷達 browser extension: POST / judges a page,
 // GET /jobs lists the 104 alert jobs for the extension to open,
-// POST /batch sends the open tabs as one Message Batch, and POST /telegram
-// takes the bot's webhook: a pressed label button under a judgement. The
+// POST /batch sends the open tabs as one Message Batch, POST /applied
+// records an application 104 confirmed, and POST /telegram takes the bot's
+// webhook: a pressed label button under a judgement. The
 // scheduler runs batch every ten minutes to send the summary of each batch
 // that has ended:
 //
@@ -272,6 +273,7 @@ func (h *handler) serve(ctx context.Context, r events.LambdaFunctionURLRequest) 
 		"/jobs":     {http.MethodGet: h.jobs},
 		"/batch":    {http.MethodPost: h.batch},
 		"/telegram": {http.MethodPost: h.telegram},
+		"/applied":  {http.MethodPost: h.applied},
 	}
 	path := r.RawPath
 	if path == "" {
@@ -311,6 +313,35 @@ func (h *handler) serve(ctx context.Context, r events.LambdaFunctionURLRequest) 
 	}
 	resp.Headers["x-radar-server"] = h.commit
 	return resp
+}
+
+// applied records an application the extension saw 104 confirm.
+func (h *handler) applied(ctx context.Context, r events.LambdaFunctionURLRequest) events.LambdaFunctionURLResponse {
+	body, status := requestBody(r, 4<<10)
+	if status != 0 {
+		return reply(status, http.StatusText(status))
+	}
+	var a app.Application
+	if err := json.Unmarshal(body, &a); err != nil {
+		return reply(http.StatusBadRequest, "bad json")
+	}
+	token, err := h.secret(ctx, mustEnv("TELEGRAM_TOKEN_PARAM"))
+	if err != nil {
+		h.log.Error("telegram token", "err", err)
+		return reply(http.StatusInternalServerError, "server error")
+	}
+	n := notify.Telegram{Token: token, ChatID: mustEnv("TELEGRAM_CHAT_ID")}
+	first, err := app.RecordApplication(ctx, h.deps, n, a)
+	switch {
+	case errors.Is(err, app.ErrBadApplication):
+		return reply(http.StatusBadRequest, err.Error())
+	case err != nil:
+		h.log.Error("record application", "err", err)
+		return reply(http.StatusInternalServerError, "server error")
+	}
+	out, _ := json.Marshal(map[string]bool{"recorded": first})
+	return events.LambdaFunctionURLResponse{StatusCode: http.StatusOK, Body: string(out),
+		Headers: map[string]string{"content-type": "application/json"}}
 }
 
 // telegram takes the bot's webhook updates: a pressed label button is
