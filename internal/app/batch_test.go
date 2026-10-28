@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -19,11 +20,17 @@ type fakeBatches struct {
 	profile   string
 	ended     bool
 	results   []assess.Result
+	submits   int
+	submitErr error
 }
 
 func (f *fakeBatches) Submit(_ context.Context, profile string, items []assess.BatchItem) (string, error) {
+	if f.submitErr != nil {
+		return "", f.submitErr
+	}
+	f.submits++
 	f.profile, f.submitted = profile, items
-	return "msgbatch_1", nil
+	return fmt.Sprintf("msgbatch_%d", f.submits), nil
 }
 func (f *fakeBatches) Ended(context.Context, string) (bool, error) { return f.ended, nil }
 func (f *fakeBatches) Results(context.Context, string) ([]assess.Result, error) {
@@ -155,7 +162,7 @@ func TestSubmitAndCheckBatch(t *testing.T) {
 	}
 
 	// Not ended yet: nothing is sent, the batch stays open.
-	if n, err := CheckBatches(ctx, d, fb, tg, open); n != 0 || err != nil || len(tg.msgs) != 0 {
+	if n, err := CheckBatches(ctx, d, fb, tg, open, Retry{}); n != 0 || err != nil || len(tg.msgs) != 0 {
 		t.Fatalf("closed %d, err %v, sent %d", n, err, len(tg.msgs))
 	}
 
@@ -166,7 +173,7 @@ func TestSubmitAndCheckBatch(t *testing.T) {
 		{ID: "p0", Assessment: good, Usage: assess.Usage{InputTokens: 1000, OutputTokens: 2000, CacheReadTokens: 3000}},
 	}
 	clk.t = clk.t.Add(time.Hour)
-	if n, err := CheckBatches(ctx, d, fb, tg, open); n != 1 || err != nil {
+	if n, err := CheckBatches(ctx, d, fb, tg, open, Retry{}); n != 1 || err != nil {
 		t.Fatalf("closed %d, err %v", n, err)
 	}
 	msg := tg.msgs[0]

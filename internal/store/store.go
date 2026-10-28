@@ -116,6 +116,9 @@ type Batch struct {
 	Excluded []BatchItem `json:"excluded,omitempty" dynamodbav:"excluded,omitempty"`
 	Skipped  []BatchItem `json:"skipped,omitempty" dynamodbav:"skipped,omitempty"`
 	ClosedAt time.Time   `json:"closed_at" dynamodbav:"closed_at"`
+	// WarnedAt is when the user was told the batch is stuck (open past 26
+	// hours), so they are told once.
+	WarnedAt time.Time `json:"warned_at" dynamodbav:"warned_at"`
 }
 
 // BatchItem is one page of a batch: ID names its request in the batch, Key
@@ -127,6 +130,9 @@ type BatchItem struct {
 	Title  string `json:"title" dynamodbav:"title"`
 	Reason string `json:"reason,omitempty" dynamodbav:"reason,omitempty"`
 	JD     string `json:"jd,omitempty" dynamodbav:"jd,omitempty"` // where the page is kept, when it went to the model
+	// Attempt counts how many times this page was batched again after a
+	// failed judgement.
+	Attempt int `json:"attempt,omitempty" dynamodbav:"attempt,omitempty"`
 }
 
 // Label is the user's own verdict on a judged job, from a Telegram button,

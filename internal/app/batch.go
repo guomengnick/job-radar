@@ -219,13 +219,17 @@ func BuildBatchReceipt(r BatchReceipt) string {
 // CheckBatches sends the summary of every open batch that has ended, and
 // stores its judgements. A batch whose summary could not be sent stays open
 // and is tried again on the next run; storing a judgement twice is harmless.
-func CheckBatches(ctx context.Context, d Deps, a BatchAssessor, n notify.Notifier, open []store.Batch) (int, error) {
+func CheckBatches(ctx context.Context, d Deps, a BatchAssessor, n notify.Notifier, open []store.Batch, retry Retry) (int, error) {
 	var errs []error
 	closed := 0
 	for _, b := range open {
 		ended, err := a.Ended(ctx, b.BatchID)
-		if err != nil || !ended {
+		if err != nil {
 			errs = append(errs, err)
+			continue
+		}
+		if !ended {
+			errs = append(errs, d.warnIfStuck(ctx, n, b))
 			continue
 		}
 		results, err := a.Results(ctx, b.BatchID)
@@ -234,6 +238,7 @@ func CheckBatches(ctx context.Context, d Deps, a BatchAssessor, n notify.Notifie
 			continue
 		}
 		done, total := d.storeResults(ctx, b, results)
+		d.handleFailures(ctx, a, retry, b, done)
 		if err := sendWithButtons(ctx, n, BuildBatchSummary(b, done, total), batchLabelRows(done)); err != nil {
 			errs = append(errs, fmt.Errorf("send batch %s summary: %w", b.BatchID, err))
 			continue
@@ -255,6 +260,7 @@ type batchResult struct {
 	item store.BatchItem
 	a    assess.Assessment
 	err  error
+	fate string // for a failure: retried or given up on (handleFailures)
 }
 
 // storeResults pairs each result with its page and stores the judgements,
@@ -353,7 +359,11 @@ func BuildBatchSummary(b store.Batch, results []batchResult, u assess.Usage) str
 	if len(failed) > 0 {
 		fmt.Fprintf(&s, "\n<b>⚠️ 失敗：%d</b>\n", len(failed))
 		for _, j := range failed {
-			fmt.Fprintf(&s, "<a href=\"%s\">%s</a>｜%s\n", e(j.item.URL), e(titleOr(j.item.Title, j.item.Key)), e(truncate(j.err.Error(), 80)))
+			fmt.Fprintf(&s, "<a href=\"%s\">%s</a>｜%s", e(j.item.URL), e(titleOr(j.item.Title, j.item.Key)), e(truncate(j.err.Error(), 80)))
+			if j.fate != "" {
+				fmt.Fprintf(&s, "｜%s", e(j.fate))
+			}
+			s.WriteString("\n")
 		}
 	}
 	if u != (assess.Usage{}) {
