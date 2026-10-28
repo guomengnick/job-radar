@@ -45,6 +45,7 @@ locals {
       ANTHROPIC_KEY_PARAM  = var.anthropic_key_param
       ASSESS_PROFILE_PARAM = var.assess_profile_param
       PAGES_BUCKET         = aws_s3_bucket.pages.bucket
+      DLQ_URL              = aws_sqs_queue.dlq.url
     })
     alarm = local.telegram_env
   }
