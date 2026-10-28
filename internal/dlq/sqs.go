@@ -59,3 +59,9 @@ func (q Queue) Delete(ctx context.Context, m Message) error {
 	_, err := q.Client.DeleteMessage(ctx, &sqs.DeleteMessageInput{QueueUrl: &q.URL, ReceiptHandle: &m.Handle})
 	return err
 }
+
+// Release puts a message read with Peek back in the queue at once.
+func (q Queue) Release(ctx context.Context, m Message) error {
+	_, err := q.Client.ChangeMessageVisibility(ctx, &sqs.ChangeMessageVisibilityInput{QueueUrl: &q.URL, ReceiptHandle: &m.Handle, VisibilityTimeout: 0})
+	return err
+}
