@@ -41,14 +41,17 @@ import (
 
 	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
+	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/dynamodb"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"github.com/aws/aws-sdk-go-v2/service/sqs"
 	"github.com/aws/aws-sdk-go-v2/service/ssm"
 
 	"github.com/guomengnick/job-radar/config"
 	"github.com/guomengnick/job-radar/internal/app"
 	"github.com/guomengnick/job-radar/internal/assess"
+	"github.com/guomengnick/job-radar/internal/dlq"
 	"github.com/guomengnick/job-radar/internal/notify"
 	"github.com/guomengnick/job-radar/internal/pages"
 	"github.com/guomengnick/job-radar/internal/store"
@@ -72,6 +75,7 @@ const minClient = "1.4.0"
 
 type handler struct {
 	deps app.Deps
+	aws  aws.Config
 	s3   *s3.Client
 	log  *slog.Logger
 	// commit is the code this binary was built from, sent back to the
@@ -107,7 +111,7 @@ func main() {
 	if b := os.Getenv("PAGES_BUCKET"); b != "" {
 		deps.Pages = pages.S3{Client: s3c, Bucket: b}
 	}
-	h := &handler{deps: deps, s3: s3c, log: log, commit: commit,
+	h := &handler{deps: deps, aws: awsCfg, s3: s3c, log: log, commit: commit,
 		secret: func(ctx context.Context, name string) (string, error) {
 			out, err := params.GetParameter(ctx, &ssm.GetParameterInput{Name: &name, WithDecryption: ptr(true)})
 			if err != nil {
@@ -500,9 +504,19 @@ func (h *handler) checkBatches(ctx context.Context) (string, error) {
 		return "", err
 	}
 	n := notify.Telegram{Token: vals[1], ChatID: mustEnv("TELEGRAM_CHAT_ID")}
-	closed, err := app.CheckBatches(ctx, h.deps, h.model(vals[0]), n, open)
+	retry := app.Retry{
+		Pages:   pages.S3{Client: h.s3, Bucket: mustEnv("PAGES_BUCKET")},
+		Profile: func(ctx context.Context) (string, error) { return h.secret(ctx, mustEnv("ASSESS_PROFILE_PARAM")) },
+		Letters: letters{dlq.Queue{Client: sqs.NewFromConfig(h.aws), URL: mustEnv("DLQ_URL")}},
+	}
+	closed, err := app.CheckBatches(ctx, h.deps, h.model(vals[0]), n, open, retry)
 	return fmt.Sprintf("batches: %d open, %d closed", len(open), closed), err
 }
+
+// letters puts dead letters in the SQS queue.
+type letters struct{ q dlq.Queue }
+
+func (l letters) Send(ctx context.Context, letter app.Letter) error { return l.q.Put(ctx, letter) }
 
 func (h *handler) model(apiKey string) assess.Client {
 	return assess.Client{APIKey: apiKey, Model: h.deps.Cfg.Assess.Model, Effort: h.deps.Cfg.Assess.Effort}
