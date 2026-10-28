@@ -9,6 +9,8 @@
 // - batch: read every open 104 job tab and send them all (POST /batch); the
 //   model judges them as one batch and the summary arrives on Telegram.
 //
+// - applied: done.js saw 104's 應徵成功 page; the application is recorded
+//   (POST /applied) for the weekly report.
 // - morning: at the time set on the options page (09:00 by default) a
 //   notification says how many new 104 jobs the digest listed; clicking it
 //   opens them as the popup's button does.
@@ -46,11 +48,19 @@ async function settings() {
 }
 
 // Only the extension's own pages (the popup, the options page) may send
-// these messages. The content script apply.js runs inside 104 pages and
-// sends none, so a message from a web page is ignored; there is no
-// externally_connectable.
+// these messages, with one exception: done.js on 104's 應徵成功 page may
+// report that application, and only that. Anything else from a web page is
+// ignored; there is no externally_connectable.
+const DONE_PAGE = "https://www.104.com.tw/job/apply/done/";
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (sender.id !== chrome.runtime.id || !(sender.url || "").startsWith(chrome.runtime.getURL(""))) return false;
+  if (sender.id !== chrome.runtime.id) return false;
+  if (!(sender.url || "").startsWith(chrome.runtime.getURL(""))) {
+    if ((sender.url || "").startsWith(DONE_PAGE) && msg && msg.type === "applied") {
+      reportApplied(msg).then(sendResponse, (err) => sendResponse({ error: err.message }));
+      return true;
+    }
+    return false;
+  }
   switch (msg && msg.type) {
     case "clip":
       clipTab(msg.tabId);
@@ -111,6 +121,16 @@ async function clipTab(tabId) {
     console.error("送到雷達失敗", err);
     await badge(tabId, "✗", "#c62828");
   }
+}
+
+// reportApplied tells the radar about an application 104 confirmed.
+async function reportApplied({ code, title, company }) {
+  if (!/^[0-9a-z]{1,20}$/.test(code || "")) throw new Error("not a 104 job");
+  return call("/applied", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ code, title: String(title || "").slice(0, 200), company: String(company || "").slice(0, 120) }),
+  });
 }
 
 async function listJobs(since) {
