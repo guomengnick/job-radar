@@ -37,11 +37,12 @@ var judged = assess.Assessment{
 func TestClip(t *testing.T) {
 	ctx := context.Background()
 	d, _, st, _ := setup(t)
+	d.Commit = "abc1234"
 	a := &fakeAssessor{out: judged}
 	arch := &memArchive{}
 	var out bytes.Buffer
 	page := assess.Page{URL: "https://www.104.com.tw/job/aaa01?jobsource=match_mail", Title: "t", Text: "工作內容"}
-	j, err := Clip(ctx, d, a, notify.Writer{W: &out}, arch, "我的背景", page)
+	j, err := Clip(ctx, d, a, notify.Writer{W: &out}, arch, Profile{Text: "我的背景", Version: 2}, page)
 	if err != nil || j.Score != 82 {
 		t.Fatalf("%+v %v", j, err)
 	}
@@ -59,6 +60,7 @@ func TestClip(t *testing.T) {
 		"📄 履歷用 C 版，加 ML 那條",
 		"<code>這個職缺需要 C# 後端，跟我的經驗直接相關。</code>",
 		"💰 輸入 3000｜快取讀 0｜快取寫 0｜輸出 400 token，約 US$0.020",
+		"🔖 評分檔案 v2｜程式 abc1234",
 		`👉 <a href="https://www.104.com.tw/job/aaa01?jobsource=match_mail">看職缺</a>｜<a href="https://www.104.com.tw/job/aaa01?apply=form#radar-apply?cv=C%2BML&amp;line=`,
 	} {
 		if !strings.Contains(out.String(), want) {
@@ -66,7 +68,8 @@ func TestClip(t *testing.T) {
 		}
 	}
 	rec, ok := st.Assessment("assess#104#aaa01")
-	if !ok || rec.Score != 82 || rec.Model != d.Cfg.Assess.Model || !strings.Contains(rec.Detail, `"resume":"C"`) || rec.JD != "jd/104/aaa01.json" {
+	if !ok || rec.Score != 82 || rec.Model != d.Cfg.Assess.Model || !strings.Contains(rec.Detail, `"resume":"C"`) || rec.JD != "jd/104/aaa01.json" ||
+		rec.ProfileVersion != 2 || rec.Commit != "abc1234" {
 		t.Errorf("stored = %+v %v", rec, ok)
 	}
 }
@@ -112,7 +115,7 @@ func TestClipKeysOtherSitesByURL(t *testing.T) {
 	d, _, st, _ := setup(t)
 	page := assess.Page{URL: "https://jobs.example.com/p/42?utm=x#apply", Text: "x"}
 	arch := &memArchive{}
-	if _, err := Clip(context.Background(), d, &fakeAssessor{out: judged}, notify.Writer{W: &bytes.Buffer{}}, arch, "p", page); err != nil {
+	if _, err := Clip(context.Background(), d, &fakeAssessor{out: judged}, notify.Writer{W: &bytes.Buffer{}}, arch, Profile{Text: "p"}, page); err != nil {
 		t.Fatal(err)
 	}
 	rec, ok := st.Assessment("assess#https://jobs.example.com/p/42")
@@ -127,7 +130,7 @@ func TestClipKeysOtherSitesByURL(t *testing.T) {
 func TestClipStillJudgesWhenKeepingFails(t *testing.T) {
 	d, _, st, _ := setup(t)
 	page := assess.Page{URL: "https://www.104.com.tw/job/aaa01", Text: "x"}
-	if _, err := Clip(context.Background(), d, &fakeAssessor{out: judged}, notify.Writer{W: &bytes.Buffer{}}, &memArchive{fail: true}, "p", page); err != nil {
+	if _, err := Clip(context.Background(), d, &fakeAssessor{out: judged}, notify.Writer{W: &bytes.Buffer{}}, &memArchive{fail: true}, Profile{Text: "p"}, page); err != nil {
 		t.Fatal(err)
 	}
 	if rec, ok := st.Assessment("assess#104#aaa01"); !ok || rec.JD != "" {
@@ -144,14 +147,14 @@ func TestClipRejectsAndReportsFailures(t *testing.T) {
 		{URL: "https://www.104.com.tw/job/a1", Text: "  "},
 	} {
 		a := &fakeAssessor{out: judged}
-		if _, err := Clip(ctx, d, a, notify.Writer{W: &bytes.Buffer{}}, &memArchive{}, "p", p); !errors.Is(err, ErrBadClip) || a.page.URL != "" {
+		if _, err := Clip(ctx, d, a, notify.Writer{W: &bytes.Buffer{}}, &memArchive{}, Profile{Text: "p"}, p); !errors.Is(err, ErrBadClip) || a.page.URL != "" {
 			t.Errorf("%+v: err = %v; the model must not be called", p, err)
 		}
 	}
 
 	var out bytes.Buffer
 	a := &fakeAssessor{err: errors.New("anthropic: HTTP 529: overloaded_error")}
-	_, err := Clip(ctx, d, a, notify.Writer{W: &out}, &memArchive{}, "p", assess.Page{URL: "https://www.104.com.tw/job/a1", Title: "後端", Text: "x"})
+	_, err := Clip(ctx, d, a, notify.Writer{W: &out}, &memArchive{}, Profile{Text: "p"}, assess.Page{URL: "https://www.104.com.tw/job/a1", Title: "後端", Text: "x"})
 	if err == nil || !strings.Contains(out.String(), "評分失敗：後端") {
 		t.Errorf("a failed call is returned and reported: %v\n%s", err, out.String())
 	}

@@ -21,6 +21,14 @@ type Assessor interface {
 	Assess(ctx context.Context, profile string, p assess.Page) (assess.Assessment, assess.Usage, error)
 }
 
+// Profile is the user's profile as a judgement read it: the text, and the
+// version of the SSM parameter it came from (0 for a local file), which is
+// stored with the judgement.
+type Profile struct {
+	Text    string
+	Version int64
+}
+
 // ErrBadClip means the request cannot be judged (not a web page, or empty).
 var ErrBadClip = errors.New("bad clip")
 
@@ -30,7 +38,7 @@ var job104 = regexp.MustCompile(`^https?://www\.104\.com\.tw/job/([0-9a-z]+)`)
 // Telegram. The page is kept (jdName) and the judgement stored with a
 // pointer to it, for later comparison with what the user applied to; a
 // failure to keep either is logged, since the reply matters more.
-func Clip(ctx context.Context, d Deps, a Assessor, n notify.Notifier, archive PageArchive, profile string, p assess.Page) (assess.Assessment, error) {
+func Clip(ctx context.Context, d Deps, a Assessor, n notify.Notifier, archive PageArchive, profile Profile, p assess.Page) (assess.Assessment, error) {
 	u, err := url.Parse(p.URL)
 	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
 		return assess.Assessment{}, fmt.Errorf("%w: the url must be a web page", ErrBadClip)
@@ -45,7 +53,7 @@ func Clip(ctx context.Context, d Deps, a Assessor, n notify.Notifier, archive Pa
 		d.Log.Error("keep page", "key", key, "err", err)
 		jd = ""
 	}
-	j, usage, err := a.Assess(ctx, profile, p)
+	j, usage, err := a.Assess(ctx, profile.Text, p)
 	if err != nil {
 		d.Log.Error("assess failed", "key", key, "err", err)
 		n.Send(ctx, fmt.Sprintf("📡 評分失敗：%s\n%s", html.EscapeString(p.Title), html.EscapeString(err.Error())))
@@ -59,13 +67,15 @@ func Clip(ctx context.Context, d Deps, a Assessor, n notify.Notifier, archive Pa
 	if row := LabelButtons(key); row != nil {
 		rows = [][]notify.Button{row}
 	}
-	if err := sendWithButtons(ctx, n, BuildAssessment(u.String(), j)+"\n"+usageLine(d.Cfg.Assess.Model, usage, false), rows); err != nil {
+	msg := BuildAssessment(u.String(), j) + "\n" + usageLine(d.Cfg.Assess.Model, usage, false) + "\n" + rulesLine(profile.Version, d.Commit)
+	if err := sendWithButtons(ctx, n, msg, rows); err != nil {
 		return j, fmt.Errorf("send assessment: %w", err)
 	}
 	detail, _ := json.Marshal(j)
 	rec := store.Assessment{
 		Key: "assess#" + key, URL: u.String(), Title: j.JobTitle, Company: j.Company, Score: j.Score,
 		Verdict: j.Verdict, Model: d.Cfg.Assess.Model, AssessedAt: now, Detail: string(detail), JD: jd,
+		ProfileVersion: profile.Version, Commit: d.Commit,
 	}
 	if err := d.Store.SaveAssessment(ctx, rec); err != nil {
 		d.Log.Error("save assessment", "key", key, "err", err)

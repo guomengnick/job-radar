@@ -81,9 +81,10 @@ type handler struct {
 	// commit is the code this binary was built from, sent back to the
 	// extension and written on every log line.
 	commit string
-	// secret reads a SecureString parameter. Each role may read only its own
-	// parameters, so a bug in the scanner cannot leak the bot token.
-	secret func(ctx context.Context, name string) (string, error)
+	// param reads a SecureString parameter and its version. Each role may
+	// read only its own parameters, so a bug in the scanner cannot leak the
+	// bot token.
+	param func(ctx context.Context, name string) (string, int64, error)
 }
 
 func main() {
@@ -112,12 +113,12 @@ func main() {
 		deps.Pages = pages.S3{Client: s3c, Bucket: b}
 	}
 	h := &handler{deps: deps, aws: awsCfg, s3: s3c, log: log, commit: commit,
-		secret: func(ctx context.Context, name string) (string, error) {
+		param: func(ctx context.Context, name string) (string, int64, error) {
 			out, err := params.GetParameter(ctx, &ssm.GetParameterInput{Name: &name, WithDecryption: ptr(true)})
 			if err != nil {
-				return "", fmt.Errorf("read parameter %s: %w", name, err)
+				return "", 0, fmt.Errorf("read parameter %s: %w", name, err)
 			}
-			return *out.Parameter.Value, nil
+			return *out.Parameter.Value, out.Parameter.Version, nil
 		}}
 	lambda.Start(h.handle)
 }
@@ -414,15 +415,15 @@ func (h *handler) clip(ctx context.Context, r events.LambdaFunctionURLRequest) e
 		return reply(http.StatusBadRequest, "bad json")
 	}
 
-	vals, err := h.params(ctx, "ANTHROPIC_KEY_PARAM", "ASSESS_PROFILE_PARAM", "TELEGRAM_TOKEN_PARAM")
+	vals, profile, err := h.withProfile(ctx, "ANTHROPIC_KEY_PARAM", "TELEGRAM_TOKEN_PARAM")
 	if err != nil {
 		h.log.Error("clip parameter", "err", err)
 		return reply(http.StatusInternalServerError, "server error")
 	}
 	model := h.model(vals[0])
-	n := notify.Telegram{Token: vals[2], ChatID: mustEnv("TELEGRAM_CHAT_ID")}
+	n := notify.Telegram{Token: vals[1], ChatID: mustEnv("TELEGRAM_CHAT_ID")}
 	archive := pages.S3{Client: h.s3, Bucket: mustEnv("PAGES_BUCKET")}
-	j, err := app.Clip(ctx, h.deps, model, n, archive, vals[1], page)
+	j, err := app.Clip(ctx, h.deps, model, n, archive, profile, page)
 	switch {
 	case errors.Is(err, app.ErrBadClip):
 		return reply(http.StatusBadRequest, err.Error())
@@ -448,19 +449,19 @@ func (h *handler) batch(ctx context.Context, r events.LambdaFunctionURLRequest) 
 	if err := json.Unmarshal(body, &req); err != nil || len(req.Pages) == 0 {
 		return reply(http.StatusBadRequest, "want {\"pages\": [...]}")
 	}
-	vals, err := h.params(ctx, "ANTHROPIC_KEY_PARAM", "ASSESS_PROFILE_PARAM", "TELEGRAM_TOKEN_PARAM", "BATCH_RULES_PARAM")
+	vals, profile, err := h.withProfile(ctx, "ANTHROPIC_KEY_PARAM", "TELEGRAM_TOKEN_PARAM", "BATCH_RULES_PARAM")
 	if err != nil {
 		h.log.Error("batch parameter", "err", err)
 		return reply(http.StatusInternalServerError, "server error")
 	}
-	rules, err := app.ParsePageRules(vals[3])
+	rules, err := app.ParsePageRules(vals[2])
 	if err != nil {
 		h.log.Error("batch rules", "err", err)
 		return reply(http.StatusInternalServerError, "batch rules are not valid JSON")
 	}
-	n := notify.Telegram{Token: vals[2], ChatID: mustEnv("TELEGRAM_CHAT_ID")}
+	n := notify.Telegram{Token: vals[1], ChatID: mustEnv("TELEGRAM_CHAT_ID")}
 	archive := pages.S3{Client: h.s3, Bucket: mustEnv("PAGES_BUCKET")}
-	receipt, err := app.SubmitPages(ctx, h.deps, h.model(vals[0]), n, archive, rules, vals[1], req.Pages)
+	receipt, err := app.SubmitPages(ctx, h.deps, h.model(vals[0]), n, archive, rules, profile, req.Pages)
 	if err != nil {
 		h.log.Error("batch", "err", err)
 		return reply(http.StatusBadGateway, "batch failed")
@@ -482,13 +483,13 @@ func (h *handler) judgeBoardJobs(ctx context.Context) (string, error) {
 	if max == 0 {
 		return "board judging is off (assess.board_daily_max)", nil
 	}
-	vals, err := h.params(ctx, "ANTHROPIC_KEY_PARAM", "ASSESS_PROFILE_PARAM", "TELEGRAM_TOKEN_PARAM")
+	vals, profile, err := h.withProfile(ctx, "ANTHROPIC_KEY_PARAM", "TELEGRAM_TOKEN_PARAM")
 	if err != nil {
 		return "", err
 	}
-	n := notify.Telegram{Token: vals[2], ChatID: mustEnv("TELEGRAM_CHAT_ID")}
+	n := notify.Telegram{Token: vals[1], ChatID: mustEnv("TELEGRAM_CHAT_ID")}
 	kept := pages.S3{Client: h.s3, Bucket: mustEnv("PAGES_BUCKET")}
-	r, err := app.JudgeBoardJobs(ctx, h.deps, h.model(vals[0]), n, kept, vals[1], h.deps.Now().Add(-24*time.Hour), max)
+	r, err := app.JudgeBoardJobs(ctx, h.deps, h.model(vals[0]), n, kept, profile, h.deps.Now().Add(-24*time.Hour), max)
 	return fmt.Sprintf("board jobs: %d sent, batch %s", r.Submitted, r.BatchID), err
 }
 
@@ -506,7 +507,7 @@ func (h *handler) checkBatches(ctx context.Context) (string, error) {
 	n := notify.Telegram{Token: vals[1], ChatID: mustEnv("TELEGRAM_CHAT_ID")}
 	retry := app.Retry{
 		Pages:   pages.S3{Client: h.s3, Bucket: mustEnv("PAGES_BUCKET")},
-		Profile: func(ctx context.Context) (string, error) { return h.secret(ctx, mustEnv("ASSESS_PROFILE_PARAM")) },
+		Profile: h.profile,
 		Letters: letters{dlq.Queue{Client: sqs.NewFromConfig(h.aws), URL: mustEnv("DLQ_URL")}},
 	}
 	closed, err := app.CheckBatches(ctx, h.deps, h.model(vals[0]), n, open, retry)
@@ -520,6 +521,30 @@ func (l letters) Send(ctx context.Context, letter app.Letter) error { return l.q
 
 func (h *handler) model(apiKey string) assess.Client {
 	return assess.Client{APIKey: apiKey, Model: h.deps.Cfg.Assess.Model, Effort: h.deps.Cfg.Assess.Effort}
+}
+
+// secret reads a SecureString parameter's value.
+func (h *handler) secret(ctx context.Context, name string) (string, error) {
+	v, _, err := h.param(ctx, name)
+	return v, err
+}
+
+// profile reads the user's profile with its version in SSM, which each
+// judgement records.
+func (h *handler) profile(ctx context.Context) (app.Profile, error) {
+	text, version, err := h.param(ctx, mustEnv("ASSESS_PROFILE_PARAM"))
+	return app.Profile{Text: text, Version: version}, err
+}
+
+// withProfile reads the parameters named by the given environment variables,
+// and then the profile.
+func (h *handler) withProfile(ctx context.Context, envs ...string) ([]string, app.Profile, error) {
+	vals, err := h.params(ctx, envs...)
+	if err != nil {
+		return nil, app.Profile{}, err
+	}
+	profile, err := h.profile(ctx)
+	return vals, profile, err
 }
 
 // params reads the parameters named by the given environment variables.

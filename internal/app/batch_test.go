@@ -133,7 +133,8 @@ func TestSubmitAndCheckBatch(t *testing.T) {
 	fb := &fakeBatches{}
 	tg := &sent{}
 	arch := &memArchive{}
-	r, err := SubmitPages(ctx, d, fb, tg, arch, rules, "我的評分檔案", pages)
+	d.Commit = "aaa1111"
+	r, err := SubmitPages(ctx, d, fb, tg, arch, rules, Profile{Text: "我的評分檔案", Version: 3}, pages)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +158,8 @@ func TestSubmitAndCheckBatch(t *testing.T) {
 		t.Fatalf("telegram %q, receipt %q", tg.msgs, BuildBatchReceipt(r))
 	}
 	open, _ := st.OpenBatches(ctx)
-	if len(open) != 1 || open[0].BatchID != "msgbatch_1" || open[0].Items[1].Key != "104#old02" || open[0].Skipped[1].Reason != "兩週內評過：64 分" {
+	if len(open) != 1 || open[0].BatchID != "msgbatch_1" || open[0].Items[1].Key != "104#old02" || open[0].Skipped[1].Reason != "兩週內評過：64 分" ||
+		open[0].ProfileVersion != 3 || open[0].Commit != "aaa1111" {
 		t.Fatalf("open = %+v", open)
 	}
 
@@ -173,6 +175,7 @@ func TestSubmitAndCheckBatch(t *testing.T) {
 		{ID: "p0", Assessment: good, Usage: assess.Usage{InputTokens: 1000, OutputTokens: 2000, CacheReadTokens: 3000}},
 	}
 	clk.t = clk.t.Add(time.Hour)
+	d.Commit = "bbb2222" // deployed while the batch ran
 	if n, err := CheckBatches(ctx, d, fb, tg, open, Retry{}); n != 1 || err != nil {
 		t.Fatalf("closed %d, err %v", n, err)
 	}
@@ -186,12 +189,14 @@ func TestSubmitAndCheckBatch(t *testing.T) {
 		"頁面沒有文字，可能還沒載完",
 		"<b>⚠️ 失敗：1</b>\n" + `<a href="https://www.104.com.tw/job/old02">平台工程師</a>｜anthropic: prompt is too long`,
 		"💰 輸入 1000｜快取讀 3000｜快取寫 0｜輸出 2000 token，約 US$0.022（批次半價）",
+		"🔖 評分檔案 v3｜程式 aaa1111→bbb2222",
 	} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("summary missing %q:\n%s", want, msg)
 		}
 	}
-	if a, ok := st.Assessment("assess#104#aaa01"); !ok || a.Score != 82 || a.Model != d.Cfg.Assess.Model || a.JD != "jd/104/aaa01.json" {
+	if a, ok := st.Assessment("assess#104#aaa01"); !ok || a.Score != 82 || a.Model != d.Cfg.Assess.Model || a.JD != "jd/104/aaa01.json" ||
+		a.ProfileVersion != 3 || a.Commit != "aaa1111→bbb2222" {
 		t.Errorf("judgement stored: %+v %v", a, ok)
 	}
 	if open, _ := st.OpenBatches(ctx); len(open) != 0 {
@@ -226,7 +231,7 @@ func TestSubmitPagesAllLeftOut(t *testing.T) {
 	ctx := context.Background()
 	d, _, st, _ := setup(t)
 	fb, tg := &fakeBatches{}, &sent{}
-	r, err := SubmitPages(ctx, d, fb, tg, &memArchive{}, PageRules{ExcludeTitleWords: []string{"業務"}}, "p",
+	r, err := SubmitPages(ctx, d, fb, tg, &memArchive{}, PageRules{ExcludeTitleWords: []string{"業務"}}, Profile{Text: "p"},
 		[]assess.Page{page("bbb01", "業務專員｜範例", "賣軟體")})
 	if err != nil || r.Submitted != 0 || fb.submitted != nil {
 		t.Fatalf("r=%+v err=%v submitted=%v", r, err, fb.submitted)
@@ -253,5 +258,20 @@ func TestCost(t *testing.T) {
 	}
 	if got := usageLine("unknown", assess.Usage{InputTokens: 5}, false); got != "💰 輸入 5｜快取讀 0｜快取寫 0｜輸出 0 token" {
 		t.Errorf("no price, no cost: %q", got)
+	}
+}
+
+func TestJudgedWith(t *testing.T) {
+	for _, tt := range []struct{ sent, read, want string }{
+		{"aaa1111", "aaa1111", "aaa1111"},
+		{"aaa1111", "bbb2222", "aaa1111→bbb2222"},
+		{"", "bbb2222", "?→bbb2222"}, // sent before commits were recorded
+	} {
+		if got := judgedWith(tt.sent, tt.read); got != tt.want {
+			t.Errorf("judgedWith(%q, %q) = %q, want %q", tt.sent, tt.read, got, tt.want)
+		}
+	}
+	if got := rulesLine(0, "?→bbb2222"); got != "🔖 評分檔案 ?｜程式 ?→bbb2222" {
+		t.Errorf("rulesLine without a version = %q", got)
 	}
 }

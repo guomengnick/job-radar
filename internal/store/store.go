@@ -98,6 +98,12 @@ type Assessment struct {
 	// JD is the page it judged, kept in the pages bucket (for example
 	// jd/104/abc.json); empty when keeping it failed or before 2026-10-25.
 	JD string `json:"jd,omitempty" dynamodbav:"jd,omitempty"`
+	// What it was judged with: the version of the profile parameter in SSM
+	// (0 for a local file), and the code, which holds the prompt and the
+	// score rules ("0fabb75→8e64d2b" when a deploy came between sending a
+	// batch and reading its answers). Both are empty before 2026-10-29.
+	ProfileVersion int64  `json:"profile_version,omitempty" dynamodbav:"profile_version,omitempty"`
+	Commit         string `json:"commit,omitempty" dynamodbav:"commit,omitempty"`
 }
 
 // Batch is one set of pages sent with the extension's batch button, kept
@@ -106,11 +112,14 @@ type Batch struct {
 	Key string `json:"key" dynamodbav:"key"` // "batch#" + the Anthropic batch ID
 	// Pending is "batch" until the summary is sent, which puts the record in
 	// pending-index (the digest reads only "new" there).
-	Pending     string      `json:"-" dynamodbav:"pending,omitempty"`
-	SubmittedAt time.Time   `json:"submitted_at" dynamodbav:"first_seen"` // pending-index's sort key
-	BatchID     string      `json:"batch_id" dynamodbav:"batch_id"`
-	Model       string      `json:"model" dynamodbav:"model"`
-	Items       []BatchItem `json:"items" dynamodbav:"items"`
+	Pending     string    `json:"-" dynamodbav:"pending,omitempty"`
+	SubmittedAt time.Time `json:"submitted_at" dynamodbav:"first_seen"` // pending-index's sort key
+	BatchID     string    `json:"batch_id" dynamodbav:"batch_id"`
+	Model       string    `json:"model" dynamodbav:"model"`
+	// The profile version and the commit the batch was sent with.
+	ProfileVersion int64       `json:"profile_version,omitempty" dynamodbav:"profile_version,omitempty"`
+	Commit         string      `json:"commit,omitempty" dynamodbav:"commit,omitempty"`
+	Items          []BatchItem `json:"items" dynamodbav:"items"`
 	// Left out before the model: excluded by a rule, judged recently, or
 	// not readable in the browser.
 	Excluded []BatchItem `json:"excluded,omitempty" dynamodbav:"excluded,omitempty"`

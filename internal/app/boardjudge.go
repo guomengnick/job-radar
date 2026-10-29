@@ -30,7 +30,7 @@ type KeptPages interface {
 // is skipped as in any batch, and the summary arrives the same way. With
 // nothing to judge, nothing is sent.
 func JudgeBoardJobs(ctx context.Context, d Deps, a BatchAssessor, n notify.Notifier, kept KeptPages,
-	profile string, since time.Time, max int) (BatchReceipt, error) {
+	profile Profile, since time.Time, max int) (BatchReceipt, error) {
 	var picked []store.JobRecord
 	for _, ats := range boardATS {
 		recs, err := d.Store.JobsSince(ctx, ats, since)

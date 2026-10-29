@@ -107,7 +107,7 @@ type LetterBox interface {
 // batch-check as usual). A judgement without a kept page, or a message it
 // cannot read, stays in the queue. It returns one line per message.
 func Redrive(ctx context.Context, d Deps, box LetterBox, inv Invoker, a BatchAssessor, n notify.Notifier,
-	kept KeptPages, profile string, letters []DeadLetter) ([]string, error) {
+	kept KeptPages, profile Profile, letters []DeadLetter) ([]string, error) {
 	var report []string
 	var errs []error
 	var pages []assess.Page

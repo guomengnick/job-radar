@@ -49,7 +49,7 @@ func TestClipSendsLabelButtons(t *testing.T) {
 	d, _, _, _ := setup(t)
 	n := &buttons{}
 	page := assess.Page{URL: "https://www.104.com.tw/job/aaa01", Text: "x"}
-	if _, err := Clip(context.Background(), d, &fakeAssessor{out: judged}, n, &memArchive{}, "p", page); err != nil {
+	if _, err := Clip(context.Background(), d, &fakeAssessor{out: judged}, n, &memArchive{}, Profile{Text: "p"}, page); err != nil {
 		t.Fatal(err)
 	}
 	if len(n.rows) != 1 || len(n.rows[0]) != 1 || n.rows[0][0][0].Data != "lbl:aaa01:y" {

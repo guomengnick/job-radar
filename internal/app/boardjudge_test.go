@@ -62,7 +62,7 @@ func TestJudgeBoardJobs(t *testing.T) {
 	add("lever", "a95-old", "A", store.JobNotified, 95, old, true)
 
 	fb, tg := &fakeBatches{}, &sent{}
-	r, err := JudgeBoardJobs(ctx, d, fb, tg, kept, "評分檔案", now.Add(-24*time.Hour), 2)
+	r, err := JudgeBoardJobs(ctx, d, fb, tg, kept, Profile{Text: "評分檔案"}, now.Add(-24*time.Hour), 2)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,7 +77,7 @@ func TestJudgeBoardJobs(t *testing.T) {
 	}
 
 	fb2, tg2 := &fakeBatches{}, &sent{}
-	if r, err := JudgeBoardJobs(ctx, d, fb2, tg2, kept, "p", now.Add(time.Minute), 10); err != nil || r.Submitted != 0 || len(tg2.msgs) != 0 {
+	if r, err := JudgeBoardJobs(ctx, d, fb2, tg2, kept, Profile{Text: "p"}, now.Add(time.Minute), 10); err != nil || r.Submitted != 0 || len(tg2.msgs) != 0 {
 		t.Errorf("nothing new: receipt %+v, err %v, telegram %q", r, err, tg2.msgs)
 	}
 }

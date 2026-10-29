@@ -348,21 +348,22 @@ func deadLetters(ctx context.Context, d app.Deps, redrive bool) error {
 		return err
 	}
 	params := ssm.NewFromConfig(awsCfg)
-	param := func(name string) (string, error) {
+	param := func(name string) (string, int64, error) {
 		out, err := params.GetParameter(ctx, &ssm.GetParameterInput{Name: &name, WithDecryption: aws.Bool(true)})
 		if err != nil {
-			return "", fmt.Errorf("read parameter %s: %w", name, err)
+			return "", 0, fmt.Errorf("read parameter %s: %w", name, err)
 		}
-		return aws.ToString(out.Parameter.Value), nil
+		return aws.ToString(out.Parameter.Value), out.Parameter.Version, nil
 	}
-	key, err := param("/job-radar/anthropic-api-key")
+	key, _, err := param("/job-radar/anthropic-api-key")
 	if err != nil {
 		return err
 	}
-	profile, err := param("/job-radar/assess-profile")
+	text, version, err := param("/job-radar/assess-profile")
 	if err != nil {
 		return err
 	}
+	profile := app.Profile{Text: text, Version: version}
 	model := &assess.Client{APIKey: key, Model: d.Cfg.Assess.Model, Effort: d.Cfg.Assess.Effort}
 	report, err := app.Redrive(ctx, d, q, lambdaInvoker{lambda.NewFromConfig(awsCfg)}, model,
 		notify.Writer{W: os.Stdout}, kept, profile, letters)

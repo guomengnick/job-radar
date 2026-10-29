@@ -83,13 +83,13 @@ func TestServeGate(t *testing.T) {
 	}
 	var asked []string
 	h := &handler{log: slog.New(slog.NewTextHandler(io.Discard, nil)),
-		secret: func(_ context.Context, name string) (string, error) {
+		param: versioned(func(_ context.Context, name string) (string, error) {
 			asked = append(asked, name)
 			if name == "/test/clip-secret" {
 				return "right-secret", nil
 			}
 			return "", errors.New("not allowed in this test")
-		}}
+		})}
 	req := func(method, secret, body string, b64 bool) events.LambdaFunctionURLRequest {
 		path, method, _ := strings.Cut(method, " ")
 		r := events.LambdaFunctionURLRequest{RawPath: path, Headers: map[string]string{}, Body: body, IsBase64Encoded: b64}
@@ -141,7 +141,7 @@ func TestServeGate(t *testing.T) {
 func TestServeVersions(t *testing.T) {
 	t.Setenv("CLIP_SECRET_PARAM", "/test/clip-secret")
 	h := &handler{log: slog.New(slog.NewTextHandler(io.Discard, nil)), commit: "3a9a26c",
-		secret: func(context.Context, string) (string, error) { return "right-secret", nil }}
+		param: versioned(func(context.Context, string) (string, error) { return "right-secret", nil })}
 	req := func(secret, client string) events.LambdaFunctionURLRequest {
 		r := events.LambdaFunctionURLRequest{RawPath: "/batch", Headers: map[string]string{"x-radar-secret": secret}, Body: "["}
 		r.RequestContext.HTTP.Method = http.MethodPost
@@ -172,12 +172,12 @@ func TestServeVersions(t *testing.T) {
 func TestServeTelegramGate(t *testing.T) {
 	t.Setenv("CLIP_SECRET_PARAM", "/test/clip-secret")
 	h := &handler{log: slog.New(slog.NewTextHandler(io.Discard, nil)),
-		secret: func(_ context.Context, name string) (string, error) {
+		param: versioned(func(_ context.Context, name string) (string, error) {
 			if name == "/test/clip-secret" {
 				return "right-secret", nil
 			}
 			return "", errors.New("not allowed in this test")
-		}}
+		})}
 	req := func(header, value, body string) events.LambdaFunctionURLRequest {
 		r := events.LambdaFunctionURLRequest{RawPath: "/telegram", Headers: map[string]string{header: value}, Body: body}
 		r.RequestContext.HTTP.Method = http.MethodPost
@@ -209,8 +209,8 @@ func TestJobsList(t *testing.T) {
 	st.InsertJobIfNew(context.Background(), store.JobRecord{Key: "104#aaa01", ATS: "104", URL: "https://www.104.com.tw/job/aaa01",
 		Title: "後端工程師", Class: "A", Reason: "taiwan_remote", State: store.JobNew, FirstSeen: now.Add(-time.Hour)})
 	h := &handler{deps: app.Deps{Store: st, Now: func() time.Time { return now }},
-		log:    slog.New(slog.NewTextHandler(io.Discard, nil)),
-		secret: func(context.Context, string) (string, error) { return "right-secret", nil }}
+		log:   slog.New(slog.NewTextHandler(io.Discard, nil)),
+		param: versioned(func(context.Context, string) (string, error) { return "right-secret", nil })}
 	get := func(since string) events.LambdaFunctionURLResponse {
 		r := events.LambdaFunctionURLRequest{RawPath: "/jobs", Headers: map[string]string{"x-radar-secret": "right-secret"}}
 		if since != "" {
@@ -245,11 +245,20 @@ func TestJobsList(t *testing.T) {
 
 func TestCheckBatchesReadsNoSecretWhenIdle(t *testing.T) {
 	h := &handler{deps: app.Deps{Store: store.NewMemory()},
-		secret: func(context.Context, string) (string, error) {
+		param: versioned(func(context.Context, string) (string, error) {
 			t.Error("no open batch: no secret is read")
 			return "", nil
-		}}
+		})}
 	if out, err := h.handle(context.Background(), json.RawMessage(`{"task":"batch-check"}`)); err != nil || out != "no open batches" {
 		t.Fatalf("out=%v err=%v", out, err)
+	}
+}
+
+// versioned turns a test's parameter values into handler.param, every one
+// at version 1.
+func versioned(f func(context.Context, string) (string, error)) func(context.Context, string) (string, int64, error) {
+	return func(ctx context.Context, name string) (string, int64, error) {
+		v, err := f(ctx, name)
+		return v, 1, err
 	}
 }

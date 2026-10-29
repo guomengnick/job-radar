@@ -49,7 +49,7 @@ func TestFailedJudgementsRetryThenDeadLetter(t *testing.T) {
 		{ID: "p4", Assessment: assess.Assessment{Score: 70, Verdict: "可考慮", JobTitle: "ok"}},
 	}}
 	tg, dead := &sent{}, &memLetters{}
-	retry := Retry{Pages: pages, Profile: func(context.Context) (string, error) { return "評分檔案", nil }, Letters: dead}
+	retry := Retry{Pages: pages, Profile: func(context.Context) (Profile, error) { return Profile{Text: "評分檔案", Version: 4}, nil }, Letters: dead}
 	if n, err := CheckBatches(ctx, d, fb, tg, []store.Batch{b}, retry); n != 1 || err != nil {
 		t.Fatalf("closed %d, %v", n, err)
 	}
@@ -59,7 +59,9 @@ func TestFailedJudgementsRetryThenDeadLetter(t *testing.T) {
 		t.Fatalf("resubmitted %+v", fb.submitted)
 	}
 	open, _ := st.OpenBatches(ctx)
-	if len(open) != 1 || open[0].BatchID != "msgbatch_1" || open[0].Items[0].Attempt != 1 || open[0].Items[1].Attempt != 2 {
+	// It is sent with the profile read now, so it records that version.
+	if len(open) != 1 || open[0].BatchID != "msgbatch_1" || open[0].Items[0].Attempt != 1 || open[0].Items[1].Attempt != 2 ||
+		open[0].ProfileVersion != 4 {
 		t.Fatalf("retry batch %+v", open)
 	}
 	// The permanent one, and the one out of attempts, are dead letters.
@@ -91,7 +93,7 @@ func TestRetryThatCannotBeSentIsADeadLetter(t *testing.T) {
 	fb := &fakeBatches{ended: true, results: []assess.Result{{ID: "p0", Err: classed(assess.Transient, "busy")}}}
 	fb.submitErr = errors.New("anthropic down")
 	dead := &memLetters{}
-	retry := Retry{Pages: pages, Profile: func(context.Context) (string, error) { return "p", nil }, Letters: dead}
+	retry := Retry{Pages: pages, Profile: func(context.Context) (Profile, error) { return Profile{Text: "p"}, nil }, Letters: dead}
 	tg := &sent{}
 	CheckBatches(ctx, d, fb, tg, []store.Batch{b}, retry)
 	if len(dead.got) != 1 || !strings.Contains(dead.got[0].Error, "重試送不出去") || !strings.Contains(tg.msgs[0], "進了 DLQ") {
