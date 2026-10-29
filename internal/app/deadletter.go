@@ -49,7 +49,7 @@ type DeadLetters interface {
 // retried; without Letters a failure is only reported.
 type Retry struct {
 	Pages   KeptPages
-	Profile func(ctx context.Context) (string, error) // read only when something is retried
+	Profile func(ctx context.Context) (Profile, error) // read only when something is retried
 	Letters DeadLetters
 }
 
@@ -128,11 +128,12 @@ func (d Deps) resubmit(ctx context.Context, a BatchAssessor, r Retry, b store.Ba
 		reqs = append(reqs, assess.BatchItem{ID: it.ID, Page: p})
 		kept = append(kept, it)
 	}
-	id, err := a.Submit(ctx, profile, reqs)
+	id, err := a.Submit(ctx, profile.Text, reqs)
 	if err != nil {
 		return "", err
 	}
-	nb := store.Batch{Key: "batch#" + id, Pending: store.BatchPending, SubmittedAt: d.Now(), BatchID: id, Model: b.Model, Items: kept}
+	nb := store.Batch{Key: "batch#" + id, Pending: store.BatchPending, SubmittedAt: d.Now(), BatchID: id, Model: b.Model,
+		ProfileVersion: profile.Version, Commit: d.Commit, Items: kept}
 	if err := d.Store.SaveBatch(ctx, nb); err != nil {
 		return id, fmt.Errorf("retry batch %s submitted but not recorded: %w", id, err)
 	}

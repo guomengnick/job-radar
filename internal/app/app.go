@@ -13,6 +13,7 @@ import (
 	"github.com/guomengnick/job-radar/internal/fetch"
 	"github.com/guomengnick/job-radar/internal/filter"
 	"github.com/guomengnick/job-radar/internal/store"
+	"github.com/guomengnick/job-radar/internal/version"
 )
 
 type Deps struct {
@@ -30,7 +31,10 @@ type Deps struct {
 	// Pages keeps the page of each board job the scan will notify, for the
 	// model to judge after the digest; nil skips it.
 	Pages PageArchive
-	Now   func() time.Time
+	// Commit is the code this binary was built from (version.Commit),
+	// recorded with each judgement.
+	Commit string
+	Now    func() time.Time
 }
 
 // NewDeps builds the standard dependency set around a store.
@@ -55,6 +59,6 @@ func NewDeps(cfg *config.Config, st store.Store, log *slog.Logger, metrics io.Wr
 		Scorer: filter.NewScorer(cfg.Skills),
 		Springboard: filter.NewSpringboard(cfg.Springboard.TitlePlus, cfg.Springboard.TitleExclude,
 			filter.SalaryFloor{Annual: cfg.Springboard.MinAnnualSalary, MonthlyTop: cfg.Springboard.MinMonthlyTopPay}),
-		Log: log, Metrics: metrics, Now: func() time.Time { return time.Now().UTC() },
+		Log: log, Metrics: metrics, Commit: version.Commit(), Now: func() time.Time { return time.Now().UTC() },
 	}
 }

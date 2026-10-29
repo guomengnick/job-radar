@@ -74,7 +74,7 @@ func TestRedrive(t *testing.T) {
 		ReadDeadLetter(dlq.Message{ID: "x", Body: "hello"}),
 	}
 	inv, bx, fb := &invoked{}, &box{}, &fakeBatches{}
-	report, err := Redrive(ctx, d, bx, inv, fb, &sent{}, kept, "評分檔案", letters)
+	report, err := Redrive(ctx, d, bx, inv, fb, &sent{}, kept, Profile{Text: "評分檔案"}, letters)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,14 +96,14 @@ func TestRedrive(t *testing.T) {
 
 	// A run that cannot be started again stays in the queue.
 	bx2 := &box{}
-	_, err = Redrive(ctx, d, bx2, &invoked{fail: true}, &fakeBatches{}, &sent{}, kept, "p", letters[:1])
+	_, err = Redrive(ctx, d, bx2, &invoked{fail: true}, &fakeBatches{}, &sent{}, kept, Profile{Text: "p"}, letters[:1])
 	if err == nil || len(bx2.deleted) != 0 {
 		t.Errorf("err %v, deleted %v", err, bx2.deleted)
 	}
 	// Only the radar's own functions are started.
 	other := ReadDeadLetter(dlq.Message{ID: "o", Body: strings.ReplaceAll(runRecord, "job-radar-digest", "someone-else")})
 	inv3 := &invoked{}
-	Redrive(ctx, d, &box{}, inv3, &fakeBatches{}, &sent{}, kept, "p", []DeadLetter{other})
+	Redrive(ctx, d, &box{}, inv3, &fakeBatches{}, &sent{}, kept, Profile{Text: "p"}, []DeadLetter{other})
 	if len(inv3.calls) != 0 {
 		t.Errorf("started %v", inv3.calls)
 	}

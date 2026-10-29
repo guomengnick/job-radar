@@ -143,12 +143,13 @@ type BatchReceipt struct {
 // nothing is left for the model the summary goes out at once; otherwise the
 // caller says the batch went out (BuildBatchReceipt).
 func SubmitPages(ctx context.Context, d Deps, a BatchAssessor, n notify.Notifier, archive PageArchive,
-	rules PageRules, profile string, pages []assess.Page) (BatchReceipt, error) {
+	rules PageRules, profile Profile, pages []assess.Page) (BatchReceipt, error) {
 	now := d.Now()
 	if err := archive.Save(ctx, "batches/"+now.Format("2006-01-02T15-04-05Z")+".json", pages); err != nil {
 		d.Log.Error("archive pages", "err", err)
 	}
-	b := store.Batch{Pending: store.BatchPending, SubmittedAt: now, Model: d.Cfg.Assess.Model}
+	b := store.Batch{Pending: store.BatchPending, SubmittedAt: now, Model: d.Cfg.Assess.Model,
+		ProfileVersion: profile.Version, Commit: d.Commit}
 	var items []assess.BatchItem
 	seen := map[string]bool{}
 	for _, p := range pages {
@@ -194,7 +195,7 @@ func SubmitPages(ctx context.Context, d Deps, a BatchAssessor, n notify.Notifier
 	if len(items) == 0 {
 		return r, n.Send(ctx, BuildBatchSummary(b, nil, assess.Usage{}))
 	}
-	id, err := a.Submit(ctx, profile, items)
+	id, err := a.Submit(ctx, profile.Text, items)
 	if err != nil {
 		return r, err
 	}
@@ -239,7 +240,8 @@ func CheckBatches(ctx context.Context, d Deps, a BatchAssessor, n notify.Notifie
 		}
 		done, total := d.storeResults(ctx, b, results)
 		d.handleFailures(ctx, a, retry, b, done)
-		if err := sendWithButtons(ctx, n, BuildBatchSummary(b, done, total), batchLabelRows(done)); err != nil {
+		summary := BuildBatchSummary(b, done, total) + "\n" + rulesLine(b.ProfileVersion, judgedWith(b.Commit, d.Commit))
+		if err := sendWithButtons(ctx, n, summary, batchLabelRows(done)); err != nil {
 			errs = append(errs, fmt.Errorf("send batch %s summary: %w", b.BatchID, err))
 			continue
 		}
@@ -276,6 +278,7 @@ func (d Deps) storeResults(ctx context.Context, b store.Batch, results []assess.
 		total.CacheWriteTokens += r.Usage.CacheWriteTokens
 	}
 	now := d.Now()
+	commit := judgedWith(b.Commit, d.Commit)
 	out := make([]batchResult, 0, len(b.Items))
 	for _, it := range b.Items {
 		r, ok := byID[it.ID]
@@ -290,7 +293,7 @@ func (d Deps) storeResults(ctx context.Context, b store.Batch, results []assess.
 		rec := store.Assessment{
 			Key: "assess#" + it.Key, URL: it.URL, Title: r.Assessment.JobTitle, Company: r.Assessment.Company,
 			Score: r.Assessment.Score, Verdict: r.Assessment.Verdict, Model: b.Model, AssessedAt: now, Detail: string(detail),
-			JD: it.JD,
+			JD: it.JD, ProfileVersion: b.ProfileVersion, Commit: commit,
 		}
 		if err := d.Store.SaveAssessment(ctx, rec); err != nil {
 			d.Log.Error("save assessment", "key", it.Key, "err", err)
@@ -399,6 +402,30 @@ func cost(model string, u assess.Usage, batch bool) (float64, bool) {
 		usd /= 2
 	}
 	return usd, true
+}
+
+// judgedWith names the code behind a batch judgement: the commit that sent
+// the page to the model (the prompt), then "→" and the commit that read the
+// answer (the score rules) when a deploy came in between. "?" is a batch
+// sent before commits were recorded.
+func judgedWith(sent, read string) string {
+	switch {
+	case sent == read:
+		return read
+	case sent == "":
+		return "?→" + read
+	}
+	return sent + "→" + read
+}
+
+// rulesLine says what a judgement was made with, so a score can be traced
+// to the profile version in SSM and the code (make deployed lists commits).
+func rulesLine(profileVersion int64, commit string) string {
+	v := "?"
+	if profileVersion > 0 {
+		v = fmt.Sprintf("v%d", profileVersion)
+	}
+	return fmt.Sprintf("🔖 評分檔案 %s｜程式 %s", v, html.EscapeString(commit))
 }
 
 // usageLine is the last line of a reply: the tokens used and their cost.
