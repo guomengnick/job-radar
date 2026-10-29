@@ -182,18 +182,22 @@ func (c Client) request(profile string, p Page) request {
 	return r
 }
 
-// sparseJD is the jd_detail at or under which a posting says too little to
-// score high; sparseCap is the most it can score then.
+// sparseJD is the jd_detail at or under which a posting says little. A short
+// posting is not held against the job (the user's call, 2026-10-29): when
+// what it does say fits (skills_fit sparseFit or more) and nothing is a red
+// flag, it scores at least sparseFloor, the 可考慮 line where the apply link
+// and its letter start.
 const (
-	sparseJD  = 3
-	sparseCap = 65
-	coreCap   = 3 // the most skills_fit when a core skill is missing
+	sparseJD    = 3
+	sparseFit   = 6
+	sparseFloor = 55
+	coreCap     = 3 // the most skills_fit when a core skill is missing
 )
 
 // clean keeps every field inside its allowed range, whatever the model sent,
-// and holds the rubric's two caps: a missing core skill keeps skills_fit at
-// coreCap, a sparse posting keeps the score at sparseCap. The verdict follows
-// the score, as the rubric defines it.
+// and holds the rubric's rules: a missing core skill caps skills_fit at
+// coreCap, and a short posting that fits scores at least sparseFloor. The
+// verdict follows the score, as the rubric defines it.
 func (a Assessment) clean() Assessment {
 	a.Score = clamp(a.Score, 0, 100)
 	a.DirectionFit = clamp(a.DirectionFit, 0, 10)
@@ -217,8 +221,9 @@ func (a Assessment) clean() Assessment {
 		skills = append(skills, k)
 	}
 	a.RequiredSkills = skills
-	if a.JDDetail >= 0 && a.JDDetail <= sparseJD {
-		a.Score = min(a.Score, sparseCap)
+	a.RedFlags = limit(a.RedFlags, 3)
+	if a.JDDetail >= 0 && a.JDDetail <= sparseJD && a.SkillsFit >= sparseFit && len(a.RedFlags) == 0 {
+		a.Score = max(a.Score, sparseFloor)
 	}
 	a.Verdict = verdictFor(a.Score)
 	if !slices.Contains(companyTypes, a.CompanyType) {
@@ -227,7 +232,6 @@ func (a Assessment) clean() Assessment {
 	if !slices.Contains(resumes, a.Resume) {
 		a.Resume = "A"
 	}
-	a.RedFlags = limit(a.RedFlags, 3)
 	a.ToConfirm = limit(a.ToConfirm, 3)
 	a.Evidence = limit(a.Evidence, 4)
 	for _, s := range []*string{&a.JobTitle, &a.Company, &a.Salary, &a.LetterLine, &a.Reason} {

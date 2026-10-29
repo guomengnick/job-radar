@@ -125,9 +125,12 @@ func TestCleanHoldsTheCaps(t *testing.T) {
 		score, skills int
 		verdict       string
 	}{
-		{"sparse posting", Assessment{Score: 80, SkillsFit: 8, JDDetail: 2}, 65, 8, "可考慮"},
-		{"detailed posting", Assessment{Score: 80, SkillsFit: 8, JDDetail: 7}, 80, 8, "建議投"},
-		{"detail not given", Assessment{Score: 80, SkillsFit: 8, JDDetail: -1}, 80, 8, "建議投"},
+		{"sparse posting that fits", Assessment{Score: 45, SkillsFit: 7, JDDetail: 2}, 55, 7, "可考慮"},
+		{"sparse posting scored high", Assessment{Score: 80, SkillsFit: 8, JDDetail: 2}, 80, 8, "建議投"},
+		{"sparse posting, skills short", Assessment{Score: 45, SkillsFit: 5, JDDetail: 2}, 45, 5, "不建議"},
+		{"sparse posting, red flag", Assessment{Score: 45, SkillsFit: 7, JDDetail: 2, RedFlags: []string{"派遣"}}, 45, 7, "不建議"},
+		{"detailed posting", Assessment{Score: 45, SkillsFit: 7, JDDetail: 7}, 45, 7, "不建議"},
+		{"detail not given", Assessment{Score: 45, SkillsFit: 7, JDDetail: -1}, 45, 7, "不建議"},
 		{"core missing", Assessment{Score: 50, SkillsFit: 7, JDDetail: 6, RequiredSkills: []Skill{{Name: "Kubernetes", Weight: "核心", Has: "沒有"}}}, 50, 3, "不建議"},
 		{"other missing", Assessment{Score: 70, SkillsFit: 7, JDDetail: 6, RequiredSkills: []Skill{{Name: "Kubernetes", Weight: "其他必備", Has: "沒有"}}}, 70, 7, "可考慮"},
 		{"verdict follows the score", Assessment{Score: 40, Verdict: "建議投", JDDetail: 6}, 40, 0, "不建議"},
