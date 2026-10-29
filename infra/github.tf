@@ -11,10 +11,15 @@
 # The first apply has to be local (make apply), since these roles do not
 # exist yet; after that, deploys can go through GitHub. See DEPLOY.zh-TW.md.
 
-variable "github_repo" {
-  description = "owner/name of the repository whose workflows may sign in."
+# The repository's token subject starts with owner@owner_id/name@repo_id
+# (GitHub's immutable subject, on for this repository; see
+# GET /repos/{owner}/{repo}/actions/oidc/customization/sub). The IDs stay
+# the same through a rename, and a repository deleted and created again
+# under the same name gets a new ID, so it cannot sign in as this one.
+variable "github_subject" {
+  description = "Prefix of the OIDC token subject of the repository whose workflows may sign in."
   type        = string
-  default     = "guomengnick/job-radar"
+  default     = "repo:guomengnick@44256664/job-radar@1414345206"
 }
 
 resource "aws_iam_openid_connect_provider" "github" {
@@ -25,8 +30,8 @@ resource "aws_iam_openid_connect_provider" "github" {
 data "aws_iam_policy_document" "github_trust" {
   for_each = {
     # Pull requests, and the plan job of a deploy (run from main).
-    plan   = ["repo:${var.github_repo}:pull_request", "repo:${var.github_repo}:ref:refs/heads/main"]
-    deploy = ["repo:${var.github_repo}:environment:production"]
+    plan   = ["${var.github_subject}:pull_request", "${var.github_subject}:ref:refs/heads/main"]
+    deploy = ["${var.github_subject}:environment:production"]
   }
   statement {
     actions = ["sts:AssumeRoleWithWebIdentity"]
