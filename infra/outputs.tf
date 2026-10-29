@@ -27,6 +27,6 @@ output "clip_url" {
 }
 
 output "github_roles" {
-  description = "Repository variables AWS_PLAN_ROLE_ARN and AWS_DEPLOY_ROLE_ARN (see DEPLOY.zh-TW.md)."
+  description = "Repository secrets AWS_PLAN_ROLE_ARN and AWS_DEPLOY_ROLE_ARN (see DEPLOY.zh-TW.md)."
   value       = { for k, r in aws_iam_role.github : k => r.arn }
 }

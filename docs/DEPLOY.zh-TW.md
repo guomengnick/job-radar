@@ -245,21 +245,21 @@ AWS_PROFILE=radar make apply
 2. 建 `production` 環境：GitHub → Settings → Environments → New environment，名字填 `production`：
    - 勾 **Required reviewers**，選你自己；
    - **Deployment branches and tags** 選 Selected branches，加上 `main`。
-3. 設 3 個變數（不是秘密，只是名字）：
+3. 設 3 個秘密：兩個角色的 ARN 和存 Terraform 狀態的桶名。它們不是密碼，但都含有 AWS 帳號 ID；repo 是公開的，Actions 的 log 會照原樣印出變數，秘密則會被遮成 `***`：
 
 ```bash
-gh variable set AWS_PLAN_ROLE_ARN --body "$(terraform -chdir=infra output -json github_roles | jq -r .plan)"
+gh secret set AWS_PLAN_ROLE_ARN --body "$(terraform -chdir=infra output -json github_roles | jq -r .plan)"
 ```
 
 ```bash
-gh variable set AWS_DEPLOY_ROLE_ARN --body "$(terraform -chdir=infra output -json github_roles | jq -r .deploy)"
+gh secret set AWS_DEPLOY_ROLE_ARN --body "$(terraform -chdir=infra output -json github_roles | jq -r .deploy)"
 ```
 
 ```bash
-gh variable set TF_STATE_BUCKET --body "$(sed -n 's/^bucket *= *"\(.*\)"/\1/p' infra/backend.hcl)"
+gh secret set TF_STATE_BUCKET --body "$(sed -n 's/^bucket *= *"\(.*\)"/\1/p' infra/backend.hcl)"
 ```
 
-4. 設 3 個秘密，值就是 `infra/terraform.tfvars` 裡的那三個。每個指令會等你貼上值再按 Enter，值不會留在指令紀錄裡：
+4. 再設 3 個秘密，值就是 `infra/terraform.tfvars` 裡的那三個。每個指令會等你貼上值再按 Enter，值不會留在指令紀錄裡：
 
 ```bash
 gh secret set TF_VAR_ALERT_EMAIL
@@ -273,7 +273,7 @@ gh secret set TF_VAR_TELEGRAM_CHAT_ID
 gh secret set TF_VAR_MAIL_DOMAIN
 ```
 
-**公開 repo 的注意事項**：這個 repo 是公開的，Actions 的 log 誰都看得到。所以兩個 workflow 都只印 plan 的摘要和資源名稱，不印值；`alert_email`、`telegram_chat_id` 和 `clip_url` 也標成 sensitive，Terraform 不會顯示它們。來自 fork 的 PR 拿不到 AWS 角色，也拿不到秘密。
+**公開 repo 的注意事項**：這個 repo 是公開的，Actions 的 log 誰都看得到。所以兩個 workflow 都只印 plan 的摘要和資源名稱，不印值；`alert_email`、`telegram_chat_id` 和 `clip_url` 也標成 sensitive，Terraform 不會顯示它們。登入 AWS 的步驟設了 `mask-aws-account-id`，錯誤訊息裡出現帳號 ID 也會被遮掉。來自 fork 的 PR 拿不到 AWS 角色，也拿不到秘密。
 
 `make apply` 還是可以用（例如 GitHub 掛了）；兩條路改的是同一份 Terraform 狀態。
 
