@@ -41,8 +41,12 @@ type Assessment struct {
 	Salary         string   `json:"salary"`       // as posted, or 未寫
 	RedFlags       []string `json:"red_flags"`    // only what would stop an application
 	ToConfirm      []string `json:"to_confirm"`   // what to ask, short of a red flag
-	Evidence       []string `json:"evidence"`     // short quotes from the posting
-	Resume         string   `json:"resume"`       // A | B | C
+	// ApplyNotes are what the posting asks of an application: where to send
+	// it, what to attach or write. ApplyElsewhere: not on this site.
+	ApplyNotes     []string `json:"apply_notes,omitempty"`
+	ApplyElsewhere bool     `json:"apply_elsewhere,omitempty"`
+	Evidence       []string `json:"evidence"` // short quotes from the posting
+	Resume         string   `json:"resume"`   // A | B | C
 	AddMLLine      bool     `json:"add_ml_line"`
 	LetterLine     string   `json:"letter_line"`
 	Reason         string   `json:"reason"`
@@ -251,6 +255,10 @@ func (a Assessment) clean() Assessment {
 		a.Resume = "A"
 	}
 	a.ToConfirm = limit(a.ToConfirm, 3)
+	a.ApplyNotes = limit(a.ApplyNotes, 3)
+	if a.ApplyElsewhere && len(a.ApplyNotes) == 0 {
+		a.ApplyNotes = []string{"不要從這個網站應徵，看職缺頁寫的方式"}
+	}
 	a.Evidence = limit(a.Evidence, 4)
 	for _, s := range []*string{&a.JobTitle, &a.Company, &a.Salary, &a.LetterLine, &a.Reason} {
 		*s = strings.TrimSpace(*s)

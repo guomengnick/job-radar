@@ -108,6 +108,11 @@ func BuildAssessment(pageURL string, j assess.Assessment) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s <b>%d 分｜%s</b>\n", verdictIcons[j.Verdict], j.Score, e(j.Verdict))
 	fmt.Fprintf(&b, "<a href=\"%s\">%s</a>｜%s\n", e(pageURL), e(title), e(j.Company))
+	// What the posting asks of an application goes first: it decides how
+	// (and whether) to apply.
+	if len(j.ApplyNotes) > 0 {
+		fmt.Fprintf(&b, "📌 應徵須知：%s\n", e(strings.Join(j.ApplyNotes, "；")))
+	}
 	detail := ""
 	if j.JDDetail >= 0 {
 		detail = fmt.Sprintf("｜JD 具體 %d/10", j.JDDetail)
@@ -174,12 +179,13 @@ const letterLineMax = 120
 // ApplyURL is a 104 job page that opens its apply form (104's own
 // ?apply=form) with a fragment the extension reads: which résumé version to
 // choose and the cover-letter sentence. The fragment never reaches 104's
-// server. It returns "" for other sites and for scores below
-// ApplyLinkMinScore. The extension only fills the form; the user reviews it
-// and presses 確認送出.
+// server. It returns "" for other sites, for scores below
+// ApplyLinkMinScore, and for a posting that asks to be applied for
+// elsewhere. The extension only fills the form; the user reviews it and
+// presses 確認送出.
 func ApplyURL(pageURL string, j assess.Assessment) string {
 	m := job104.FindStringSubmatch(pageURL)
-	if m == nil || j.Score < ApplyLinkMinScore {
+	if m == nil || j.Score < ApplyLinkMinScore || j.ApplyElsewhere {
 		return ""
 	}
 	cv := j.Resume

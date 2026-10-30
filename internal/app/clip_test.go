@@ -85,6 +85,7 @@ func TestApplyURL(t *testing.T) {
 		{"at the threshold, no sentence", job, assess.Assessment{Score: ApplyLinkMinScore, Resume: "A", LetterLine: "  "}, "A", ""},
 		{"below the threshold", job, assess.Assessment{Score: ApplyLinkMinScore - 1, Resume: "A"}, "", ""},
 		{"not 104", "https://jobs.example.com/p/42", judged, "", ""},
+		{"asks to apply elsewhere", job, assess.Assessment{Score: 90, Resume: "A", ApplyElsewhere: true}, "", ""},
 		{"long sentence", job, assess.Assessment{Score: 90, Resume: "B", LetterLine: strings.Repeat("字", 200)}, "B", strings.Repeat("字", letterLineMax) + "…"},
 	} {
 		t.Run(c.name, func(t *testing.T) {
@@ -108,6 +109,21 @@ func TestApplyURL(t *testing.T) {
 				t.Errorf("fragment %v %v, want cv %q line %q", v, err, c.cv, c.line)
 			}
 		})
+	}
+}
+
+func TestBuildAssessmentApplyNotes(t *testing.T) {
+	const job = "https://www.104.com.tw/job/aaa01"
+	j := judged
+	j.ApplyNotes = []string{"請附作品網址，沒有請勿應徵"}
+	msg := BuildAssessment(job, j)
+	if !strings.Contains(msg, "範例科技\n📌 應徵須知：請附作品網址，沒有請勿應徵\n方向") || !strings.Contains(msg, "帶入應徵") {
+		t.Errorf("the notes come right under the title, and the form can still be filled:\n%s", msg)
+	}
+	j.ApplyNotes, j.ApplyElsewhere = []string{"請到官網 <jobs.example.com> 應徵"}, true
+	msg = BuildAssessment(job, j)
+	if !strings.Contains(msg, "📌 應徵須知：請到官網 &lt;jobs.example.com&gt; 應徵") || strings.Contains(msg, "帶入應徵") {
+		t.Errorf("applied for elsewhere: notes escaped, no 帶入應徵:\n%s", msg)
 	}
 }
 

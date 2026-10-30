@@ -24,6 +24,8 @@ verdict：75 以上「建議投」，55–74「可考慮」，其他「不建議
 - salary：照頁面寫的抄，沒寫就填「未寫」。不要推測。
 - red_flags：只列看到就可能不投的事：<profile> 的紅旗清單、核心技能「沒有」、硬門檻不符、外包派遣。每項一短句，0–3 項；沒有就空著，不要湊數。缺「其他必備」技能不是紅旗。
 - to_confirm：要問清楚、但不至於不投的事，例如薪資面議、公司類型看不出來、工作內容寫得太空泛、缺的其他必備技能實際用多少。每項一短句，0–3 項。
+- apply_notes：頁面對「怎麼應徵」的要求或限制，例如要到官網或 email 應徵、不要從這個網站投、要附作品集、系統網址或 GitHub、推薦信要寫什麼、要先填問卷或做測驗、截止日期。每項一短句，照頁面的意思寫，0–3 項；頁面沒寫就空著。「歡迎投遞」這類客套話不算。
+- apply_elsewhere：頁面要使用者不要從這個網站應徵，改到官網、email 或其他地方時為 true，其他情況 false。
 - evidence：2–4 段頁面原文的短引用（每段 40 字以內），支持你最重要的判斷。只能引用頁面上真的有的字。
 - resume：依 <profile> 的版本規則選 A、B 或 C。
 - add_ml_line：職缺跟 AI、機器學習、模型、資料科學有關時為 true。
@@ -56,19 +58,21 @@ var tool = anthropic.ToolUnionParam{OfTool: &anthropic.ToolParam{
 				},
 				"required": []string{"name", "weight", "has"},
 			}},
-			"jd_detail":    map[string]any{"type": "integer", "minimum": 0, "maximum": 10},
-			"to_confirm":   map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "maxItems": 3},
-			"company_type": map[string]any{"type": "string", "enum": companyTypes},
-			"salary":       map[string]any{"type": "string"},
-			"red_flags":    map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "maxItems": 3},
-			"evidence":     map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "maxItems": 4},
-			"resume":       map[string]any{"type": "string", "enum": resumes},
-			"add_ml_line":  map[string]any{"type": "boolean"},
-			"letter_line":  map[string]any{"type": "string"},
-			"reason":       map[string]any{"type": "string"},
+			"jd_detail":       map[string]any{"type": "integer", "minimum": 0, "maximum": 10},
+			"to_confirm":      map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "maxItems": 3},
+			"company_type":    map[string]any{"type": "string", "enum": companyTypes},
+			"salary":          map[string]any{"type": "string"},
+			"red_flags":       map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "maxItems": 3},
+			"apply_notes":     map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "maxItems": 3},
+			"apply_elsewhere": map[string]any{"type": "boolean"},
+			"evidence":        map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "maxItems": 4},
+			"resume":          map[string]any{"type": "string", "enum": resumes},
+			"add_ml_line":     map[string]any{"type": "boolean"},
+			"letter_line":     map[string]any{"type": "string"},
+			"reason":          map[string]any{"type": "string"},
 		},
 		Required: []string{"job_title", "company", "score", "verdict", "direction_fit", "skills_fit",
-			"required_skills", "jd_detail", "company_type", "salary", "red_flags", "to_confirm", "evidence",
-			"resume", "add_ml_line", "letter_line", "reason"},
+			"required_skills", "jd_detail", "company_type", "salary", "red_flags", "to_confirm", "apply_notes",
+			"apply_elsewhere", "evidence", "resume", "add_ml_line", "letter_line", "reason"},
 	},
 }}

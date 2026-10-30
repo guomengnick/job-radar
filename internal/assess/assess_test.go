@@ -105,7 +105,7 @@ func TestAssess(t *testing.T) {
 func TestAssessCleansTheReply(t *testing.T) {
 	f := &fakeAPI{status: 200, reply: `{"content":[{"type":"text","text":"思考中"},{"type":"tool_use","name":"record_assessment","input":{
 	  "score":140,"verdict":"一定要投","direction_fit":-3,"skills_fit":12,"company_type":"新創",
-	  "salary":"  ","red_flags":["a","b","c","d","e","f"," "],"evidence":["1","2","3","4","5"],"resume":"D","reason":" ok "}}]}`}
+	  "salary":"  ","red_flags":["a","b","c","d","e","f"," "],"apply_notes":[" ","官網","附作品","問卷","截止"],"apply_elsewhere":true,"evidence":["1","2","3","4","5"],"resume":"D","reason":" ok "}}]}`}
 	c := Client{APIKey: "k", Model: "m", BaseURL: f.serve(t).URL}
 	a, _, err := c.Assess(context.Background(), "p", Page{Text: "x"})
 	if err != nil {
@@ -113,7 +113,7 @@ func TestAssessCleansTheReply(t *testing.T) {
 	}
 	if a.Score != 100 || a.Verdict != "建議投" || a.DirectionFit != 0 || a.SkillsFit != 10 ||
 		a.CompanyType != "不明" || a.Salary != "未寫" || len(a.RedFlags) != 3 || len(a.Evidence) != 4 ||
-		a.Resume != "A" || a.Reason != "ok" || a.JDDetail != -1 {
+		a.Resume != "A" || a.Reason != "ok" || a.JDDetail != -1 || len(a.ApplyNotes) != 3 || a.ApplyNotes[0] != "官網" || !a.ApplyElsewhere {
 		t.Errorf("cleaned = %+v", a)
 	}
 }
@@ -139,6 +139,9 @@ func TestCleanHoldsTheCaps(t *testing.T) {
 		if got.Score != c.score || got.SkillsFit != c.skills || got.Verdict != c.verdict {
 			t.Errorf("%s: score %d skills %d verdict %s", c.name, got.Score, got.SkillsFit, got.Verdict)
 		}
+	}
+	if bare := (Assessment{ApplyElsewhere: true}).clean(); len(bare.ApplyNotes) != 1 {
+		t.Errorf("elsewhere without saying where still gets a note: %+v", bare.ApplyNotes)
 	}
 	odd := Assessment{RequiredSkills: []Skill{{Name: " ", Weight: "核心"}, {Name: "Go", Weight: "很重要", Has: "會"}}}.clean()
 	if len(odd.RequiredSkills) != 1 || odd.RequiredSkills[0].Weight != "其他必備" || odd.RequiredSkills[0].Has != "沒有" {

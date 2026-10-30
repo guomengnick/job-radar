@@ -344,6 +344,9 @@ func BuildBatchSummary(b store.Batch, results []batchResult, u assess.Usage) str
 		for _, j := range group {
 			fmt.Fprintf(&s, "[%d] <a href=\"%s\">%s</a>｜%s｜%s", j.a.Score, e(j.item.URL), e(titleOr(j.a.JobTitle, j.item.Title)),
 				e(j.a.Company), e(truncate(j.a.Reason, 40)))
+			if len(j.a.ApplyNotes) > 0 {
+				fmt.Fprintf(&s, "｜📌 %s", e(strings.Join(j.a.ApplyNotes, "；")))
+			}
 			if apply := ApplyURL(j.item.URL, j.a); apply != "" {
 				fmt.Fprintf(&s, "｜<a href=\"%s\">帶入應徵</a>", e(apply))
 			}
