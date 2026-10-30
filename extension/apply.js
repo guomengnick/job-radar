@@ -8,7 +8,9 @@
 // - writes the cover letter: the options page's opening, the line from the
 //   link, and the closing,
 //
-// and shows a note at the top of the page. It never presses 確認送出 and
+// and shows a note at the top of the page, listing the employer's 公司提問
+// (questions only the user can answer, sometimes with a condition such as
+// "沒有作品網址請勿應徵"). It never presses 確認送出 and
 // leaves the two checkboxes (儲存此次修改, 新增自我推薦信) alone, so the
 // letter templates saved on 104 stay as they are. The user reads the form
 // and sends it.
@@ -90,6 +92,18 @@
     return textarea.value === text ? { ok: true } : { ok: false, why: "推薦信沒寫進去，請手動貼上" };
   }
 
+  // The employer's own questions sit under a 公司提問 heading, numbered
+  // "1. …". They may be outside the part of the popup found first, so look
+  // a few levels up. null: no such heading.
+  function companyQuestions(body) {
+    let box = body;
+    for (let i = 0; i < 3 && box && !box.innerText.includes("公司提問"); i++) box = box.parentElement;
+    if (!box || !box.innerText.includes("公司提問")) return null;
+    const lines = box.innerText.split("\n").map((s) => s.trim()).filter(Boolean);
+    const at = lines.findIndex((s) => s.startsWith("公司提問"));
+    return lines.slice(at + 1).filter((s) => /^\d+\s*[.．、]/.test(s)).slice(0, 5);
+  }
+
   function note(lines, good) {
     const box = document.createElement("div");
     box.setAttribute("role", "status");
@@ -132,6 +146,15 @@
     if (letter) {
       const r = await writeLetter(body, letter);
       r.ok ? done.push(line ? "推薦信：開頭＋這個職缺的一句＋結尾" : "推薦信：開頭＋結尾") : problems.push(r.why);
+    }
+
+    const questions = companyQuestions(body);
+    if (questions) {
+      problems.push(
+        questions.length
+          ? `公司提問 ${questions.length} 題，要你自己回答（條件寫在題目裡的要看清楚）：\n${questions.join("\n")}`
+          : "這家有公司提問，要你自己回答，請往下看。",
+      );
     }
 
     note([...done.map((s) => "✅ " + s), ...problems.map((s) => "⚠️ " + s), "看過後請自己按「確認送出」。"], problems.length === 0);
