@@ -123,7 +123,8 @@ func fieldAfter(text, label string) string {
 }
 
 // reassessAfter is how long a judgement of a job is reused instead of
-// paying for it again.
+// paying for it again, as long as it was made with the same version of the
+// profile.
 const reassessAfter = 14 * 24 * time.Hour
 
 // BatchReceipt is what the batch button gets back at once.
@@ -137,7 +138,9 @@ type BatchReceipt struct {
 
 // SubmitPages takes the pages the batch button read from the open tabs.
 // Each is archived, then the rules run, a job judged in the last two weeks
-// is skipped, and the rest go to the model as one Message Batch; each of
+// with this version of the profile is skipped (one judged with another
+// version, or before versions were recorded, is judged again), and the
+// rest go to the model as one Message Batch; each of
 // those is also kept on its own (jdName). The batch
 // is recorded open; CheckBatches sends the summary once it has ended. When
 // nothing is left for the model the summary goes out at once; otherwise the
@@ -176,7 +179,7 @@ func SubmitPages(ctx context.Context, d Deps, a BatchAssessor, n notify.Notifier
 		if err != nil {
 			return BatchReceipt{}, err
 		}
-		if ok && now.Sub(prev.AssessedAt) < reassessAfter {
+		if ok && now.Sub(prev.AssessedAt) < reassessAfter && prev.ProfileVersion == profile.Version {
 			it.Reason = fmt.Sprintf("兩週內評過：%d 分", prev.Score)
 			b.Skipped = append(b.Skipped, it)
 			continue

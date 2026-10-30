@@ -79,7 +79,7 @@ CloudWatch 告警 ─► SNS ─► Email，以及 alarm 函式 ─► Telegram
 | jobs | `key` = `ats#slug#id` | 只存通過職稱篩選的職缺。寫入條件是 `attribute_not_exists`。另有稀疏索引 `pending-index`：只有待通知的職缺帶有 `pending` 欄位；索引 `source-index`（`ats`、`first_seen`）依來源和時間列出所有職缺，擴充功能用它列出某天起的 104 職缺，日報用它列出被規則排除的。同一張表也存評分結果（`assess#…`）和批次（`batch#…`，等待總表時 `pending` 為 `batch`，batch 函式每 10 分鐘從 `pending-index` 找出來） |
 | runs | `pk="run"` + `sk=開始時間#ats#task` | 各種結果的計數、新增數、待通知數、狀態；`expires_at` 到期自動刪除 |
 
-評分結果（`assess#…`）的 `jd` 欄位指向 S3 pages 桶裡被評的那一頁：104 職缺是 `jd/104/<代碼>.json`，其他網站是 `jd/web/<網址雜湊>.json`，保存一年，用來對照 AI 的判斷和 JD 原文，也當評估集。每筆評分也記下用什麼評的：`profile_version` 是 SSM 裡評分檔案的版本，`commit` 是提示詞和分數規則所在的程式；批次送出和讀回答之間如果有部署，寫成 `舊→新`。Telegram 每則評分最後一行「🔖 評分檔案 v2｜程式 54efb96」顯示的就是這兩個（2026-10-29 之後的評分才有）。整批送出的原始頁面在 `batches/`，保存 30 天。掃描時，會通知的國外職缺頁面也存在 `jd/`；每天 08:50 batch 函式把前一天新出現的 A 類職缺（技能分高的先，最多 `assess.board_daily_max` 個）送 AI 批次評分，總表跟手動批次一樣由 batch-check 送出。
+評分結果（`assess#…`）的 `jd` 欄位指向 S3 pages 桶裡被評的那一頁：104 職缺是 `jd/104/<代碼>.json`，其他網站是 `jd/web/<網址雜湊>.json`，保存一年，用來對照 AI 的判斷和 JD 原文，也當評估集。每筆評分也記下用什麼評的：`profile_version` 是 SSM 裡評分檔案的版本，`commit` 是提示詞和分數規則所在的程式；批次送出和讀回答之間如果有部署，寫成 `舊→新`。Telegram 每則評分最後一行「🔖 評分檔案 v2｜程式 54efb96」顯示的就是這兩個（2026-10-29 之後的評分才有）。批次遇到兩週內評過的職缺，只有評分檔案是同一版才略過；換版後（或舊紀錄沒有版本）會重評。整批送出的原始頁面在 `batches/`，保存 30 天。掃描時，會通知的國外職缺頁面也存在 `jd/`；每天 08:50 batch 函式把前一天新出現的 A 類職缺（技能分高的先，最多 `assess.board_daily_max` 個）送 AI 批次評分，總表跟手動批次一樣由 batch-check 送出。
 
 ## 5. 篩選規則（`config/radar.yml`，移植自 career-ops）
 
