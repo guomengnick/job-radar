@@ -27,7 +27,8 @@ type KeptPages interface {
 // first seen since the given time to the model as one batch: the best
 // keyword scores first, at most max. Each is judged from the page the scan
 // kept; a job without one is left out. A job judged in the last two weeks
-// is skipped as in any batch, and the summary arrives the same way. With
+// with the same profile is skipped as in any batch, and the summary arrives
+// the same way. With
 // nothing to judge, nothing is sent.
 func JudgeBoardJobs(ctx context.Context, d Deps, a BatchAssessor, n notify.Notifier, kept KeptPages,
 	profile Profile, since time.Time, max int) (BatchReceipt, error) {

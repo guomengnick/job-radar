@@ -119,7 +119,7 @@ func TestPageRules(t *testing.T) {
 func TestSubmitAndCheckBatch(t *testing.T) {
 	ctx := context.Background()
 	d, _, st, clk := setup(t)
-	st.SaveAssessment(ctx, store.Assessment{Key: "assess#104#old01", Score: 64, AssessedAt: clk.t.Add(-24 * time.Hour)})
+	st.SaveAssessment(ctx, store.Assessment{Key: "assess#104#old01", Score: 64, AssessedAt: clk.t.Add(-24 * time.Hour), ProfileVersion: 3})
 	st.SaveAssessment(ctx, store.Assessment{Key: "assess#104#old02", Score: 30, AssessedAt: clk.t.Add(-20 * 24 * time.Hour)})
 	rules := PageRules{ExcludeTitleWords: []string{"業務"}}
 	pages := []assess.Page{
@@ -241,6 +241,25 @@ func TestSubmitPagesAllLeftOut(t *testing.T) {
 	}
 	if open, _ := st.OpenBatches(ctx); len(open) != 0 {
 		t.Error("nothing to wait for, nothing recorded")
+	}
+}
+
+func TestSubmitPagesJudgesAgainWithANewProfile(t *testing.T) {
+	ctx := context.Background()
+	d, _, st, clk := setup(t)
+	yesterday := clk.t.Add(-24 * time.Hour)
+	st.SaveAssessment(ctx, store.Assessment{Key: "assess#104#v2", Score: 70, AssessedAt: yesterday, ProfileVersion: 2})
+	st.SaveAssessment(ctx, store.Assessment{Key: "assess#104#v1", Score: 52, AssessedAt: yesterday, ProfileVersion: 1})
+	st.SaveAssessment(ctx, store.Assessment{Key: "assess#104#none", Score: 40, AssessedAt: yesterday}) // before versions were recorded
+	fb := &fakeBatches{}
+	r, err := SubmitPages(ctx, d, fb, &sent{}, &memArchive{}, PageRules{}, Profile{Text: "p", Version: 2}, []assess.Page{
+		page("v2", "後端工程師｜同一版", "x"), page("v1", "後端工程師｜舊版", "x"), page("none", "後端工程師｜沒記版本", "x"),
+	})
+	if err != nil || r.Submitted != 2 || r.Skipped != 1 {
+		t.Fatalf("r=%+v err=%v", r, err)
+	}
+	if fb.submitted[0].Page.URL != "https://www.104.com.tw/job/v1" || fb.submitted[1].Page.URL != "https://www.104.com.tw/job/none" {
+		t.Errorf("submitted %+v; want the two judged with another profile", fb.submitted)
 	}
 }
 

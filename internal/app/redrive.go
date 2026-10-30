@@ -140,7 +140,7 @@ func Redrive(ctx context.Context, d Deps, box LetterBox, inv Invoker, a BatchAss
 			errs = append(errs, err)
 			report = append(report, fmt.Sprintf("⚠️ %d 個評分重送失敗，留在 DLQ：%v", len(pages), err))
 		default:
-			report = append(report, fmt.Sprintf("🔁 %d 個評分重新送出（批次 %s；兩週內評過的會略過）", len(pages), r.BatchID))
+			report = append(report, fmt.Sprintf("🔁 %d 個評分重新送出（批次 %s；兩週內用同一版評分檔案評過的會略過）", len(pages), r.BatchID))
 			for _, dl := range judged {
 				errs = append(errs, box.Delete(ctx, dl.Message))
 			}
