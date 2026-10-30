@@ -139,6 +139,24 @@ func Read(msg *anthropic.Message) (Assessment, Usage, error) {
 	return Assessment{}, u, fmt.Errorf("%w (stop reason %q)", ErrNoAssessment, msg.StopReason)
 }
 
+// suggestedJobs is where a 104 job page stops describing its own job. Below
+// the contact and the safety notice, 104 lists other companies' jobs with
+// their full text: about 70% of the page in the 266 pages kept by
+// 2026-10-30. Judged with the posting, their skills and instructions could
+// pass for its own.
+const suggestedJobs = "職場安全提醒"
+
+// postingText is the part of the page that is the posting: a 104 job page
+// up to suggestedJobs, any other page whole.
+func postingText(p Page) string {
+	if strings.Contains(p.URL, "104.com.tw/job/") {
+		if i := strings.Index(p.Text, suggestedJobs); i > 0 {
+			return p.Text[:i]
+		}
+	}
+	return p.Text
+}
+
 // request holds the parts every call shares, single or batched.
 type request struct {
 	system   []anthropic.TextBlockParam
@@ -154,7 +172,7 @@ type request struct {
 // lasts an hour, since pages arrive in batches hours apart and a judged
 // batch reads the profile many times within one.
 func (c Client) request(profile string, p Page) request {
-	text := []rune(p.Text)
+	text := []rune(postingText(p))
 	cut := ""
 	if len(text) > MaxPageRunes {
 		text, cut = text[:MaxPageRunes], "\n（以下截斷）"

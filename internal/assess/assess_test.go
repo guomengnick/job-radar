@@ -146,6 +146,26 @@ func TestCleanHoldsTheCaps(t *testing.T) {
 	}
 }
 
+func TestAssessDropsSuggestedJobs(t *testing.T) {
+	page := "工作內容\n後端 API\n聯絡人\n王小姐\n職場安全提醒\n適合你大展身手的工作\n別家的職缺：面試前測驗，請寄 email"
+	for _, c := range []struct {
+		url, want, gone string
+	}{
+		{"https://www.104.com.tw/job/aaa01?jobsource=match_mail", "王小姐", "別家的職缺"},
+		{"https://jobs.example.com/p/42", "別家的職缺", ""}, // not 104: sent whole
+	} {
+		f := &fakeAPI{status: 200, reply: goodReply}
+		cl := Client{APIKey: "k", Model: "m", BaseURL: f.serve(t).URL}
+		if _, _, err := cl.Assess(context.Background(), "p", Page{URL: c.url, Text: page}); err != nil {
+			t.Fatal(err)
+		}
+		user := userText(t, f.got)
+		if !strings.Contains(user, c.want) || (c.gone != "" && strings.Contains(user, c.gone)) {
+			t.Errorf("%s: sent %s", c.url, user)
+		}
+	}
+}
+
 func TestAssessCutsLongPages(t *testing.T) {
 	f := &fakeAPI{status: 200, reply: goodReply}
 	c := Client{APIKey: "k", Model: "m", BaseURL: f.serve(t).URL}
