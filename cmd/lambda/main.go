@@ -391,7 +391,7 @@ func (h *handler) jobs(ctx context.Context, r events.LambdaFunctionURLRequest) e
 		}
 		since = t
 	}
-	jobs, err := app.ListAlertJobs(ctx, h.deps, since)
+	jobs, err := app.ListOpenJobs(ctx, h.deps, since)
 	switch {
 	case errors.Is(err, app.ErrBadSince):
 		return reply(http.StatusBadRequest, err.Error())

@@ -48,7 +48,8 @@ var (
 	hybridRE = regexp.MustCompile(`(?i)\bhybrid\b|混合`)
 	onsiteRE = regexp.MustCompile(`(?i)\bon-?site\b|\bin[- ]office\b|office[- ]based`)
 
-	broadRE = regexp.MustCompile(`(?i)\bapac\b|asia[- ]pacific|east asia|world ?wide|anywhere|\bglobal\b|any time ?zone|timezone independent`)
+	// The Chinese forms are how LinkedIn's zh-TW pages name regions ("亞太地區").
+	broadRE = regexp.MustCompile(`(?i)\bapac\b|asia[- ]pacific|east asia|world ?wide|anywhere|\bglobal\b|any time ?zone|timezone independent|亞太|亞洲|東亞|全球|世界各地`)
 	// "Anywhere in France" and "SF Global HQ" are not worldwide; these are
 	// removed before broadRE runs. "Anywhere in the world" is kept.
 	notBroadRE = regexp.MustCompile(`(?i)anywhere in (?:the )?(?:[a-z]+)|global (?:hq|headquarters|office)`)
@@ -68,8 +69,8 @@ var (
 	}
 	// Regions wider than one country. A location naming a region and a place
 	// in it ("Bengaluru, India; APAC") is judged by the place.
-	regionRE    = regexp.MustCompile(`(?i)\b(?:apac|asia[- ]pacific|east asia|emea|europe|european union|eu|americas|amer|north america|latam|latin america|south america)\b`)
-	worldwideRE = regexp.MustCompile(`(?i)world ?wide|anywhere|\bglobal\b|any time ?zone|timezone independent`)
+	regionRE    = regexp.MustCompile(`(?i)\b(?:apac|asia[- ]pacific|east asia|emea|europe|european union|eu|americas|amer|north america|latam|latin america|south america)\b|亞太|亞洲|東亞|歐洲|中東|美洲`)
+	worldwideRE = regexp.MustCompile(`(?i)world ?wide|anywhere|\bglobal\b|any time ?zone|timezone independent|全球|世界各地`)
 	// Titles name places for other reasons ("Help Us Build…", "日商"), so a
 	// title is read for full country names, the Asian list, foreign cities
 	// and the upper-case US/UK only.

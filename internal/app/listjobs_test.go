@@ -65,3 +65,39 @@ func TestListAlertJobsBounds(t *testing.T) {
 		t.Errorf("the window's edge is allowed: %v", err)
 	}
 }
+
+func TestListOpenJobs(t *testing.T) {
+	ctx := context.Background()
+	d, _, _, clk := setup(t)
+	since := clk.t
+	clk.t = since.Add(time.Hour)
+	for _, raw := range []string{
+		mailWith(sesDMARCPass, "jobbank@ms1.104.com.tw", "配對日報", alertHTML(t)),
+		mailWith(sesLinkedIn, "jobalerts-noreply@linkedin.com", "s", linkedInHTML(t)),
+	} {
+		if _, err := IngestMail(ctx, d, "inbound/k", strings.NewReader(raw)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	jobs, err := ListOpenJobs(ctx, d, since)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, j := range jobs {
+		got = append(got, j.Group+" "+j.Class+" "+j.URL)
+	}
+	// The LinkedIn jobs the digest lists come after 104's; the LinkedIn
+	// jobs it only counts (Principal, Hyderabad) are not offered.
+	want := []string{
+		"digest B https://www.104.com.tw/job/aaa01",
+		"digest B https://www.104.com.tw/job/ccc01",
+		"linkedin A https://www.linkedin.com/jobs/view/1000000001/",
+		"linkedin B https://www.linkedin.com/jobs/view/1000000002/",
+		"excluded A https://www.104.com.tw/job/bbb01",
+		"excluded B https://www.104.com.tw/job/aaa02",
+	}
+	if strings.Join(got, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("got\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+}
