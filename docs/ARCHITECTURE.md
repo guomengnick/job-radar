@@ -15,7 +15,7 @@
 | 工作 | 誰負責 |
 |---|---|
 | Greenhouse、Lever、Ashby 每天掃描並通知 | 雷達 |
-| Workday 每週掃描、Gmail 裡的 LinkedIn 通知信、0–100 深入評分、投遞追蹤、客製履歷 | career-ops |
+| Workday 每週掃描、0–100 深入評分、投遞追蹤、客製履歷 | career-ops |
 
 流程：雷達通知 → 點連結看 → 想投的，把網址交給 career-ops 或 Claude 做完整評分。兩邊並行兩週、比對結果後，再決定要不要關掉 career-ops 每日排程裡這三家的掃描。
 
@@ -36,6 +36,7 @@ EventBridge Scheduler（Asia/Taipei）
   週日 07:00  ─► sync ×3 ─► 下載公開看板清單 ─► 把新看板加進 boards
 
 104 配對信 ─► Outlook 轉寄 ─► SES 收信 ─► S3 mail 桶 ─► ingest ─► jobs（職缺、聯絡）
+LinkedIn 職缺配對通知 ─► Gmail 篩選器轉寄 ─┘（連結裡的一次性登入碼不保留，只留職缺編號）
 
 瀏覽器擴充功能「送到雷達」（使用者按了才讀頁面）
   ─► Function URL（公開網址，靠共享密鑰）─► clip

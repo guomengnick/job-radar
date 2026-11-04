@@ -48,6 +48,32 @@ func TestDigestShowsAlertJobs(t *testing.T) {
 	}
 }
 
+func TestDigestShowsLinkedInJobs(t *testing.T) {
+	ctx := context.Background()
+	d, _, _, _ := setup(t)
+	raw := mailWith(sesLinkedIn, "jobalerts-noreply@linkedin.com", "s", linkedInHTML(t))
+	if _, err := IngestMail(ctx, d, "inbound/k", strings.NewReader(raw)); err != nil {
+		t.Fatal(err)
+	}
+	msg, err := Digest(ctx, d, notify.Writer{W: &bytes.Buffer{}}, DigestOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"📭 104 配對信：這段時間沒有收到\n📬 LinkedIn 通知 1 封｜職缺 4｜第一次出現 4｜值得看 2\n",
+		"<b>LinkedIn 職缺配對通知：2 筆</b>",
+		`<a href="https://www.linkedin.com/jobs/view/1000000001/">Senior Software Engineer</a>` + "\n範例 AI｜台灣\n判斷：台灣遠端",
+		"範例半導體｜新竹地區\n判斷：混合辦公，到班天數需確認",
+	} {
+		if !strings.Contains(msg, want) {
+			t.Errorf("digest missing %q:\n%s", want, msg)
+		}
+	}
+	if strings.Contains(msg, "Principal") || strings.Contains(msg, "海得拉巴德") {
+		t.Errorf("jobs not worth a look are only counted:\n%s", msg)
+	}
+}
+
 func TestDigestListsEveryAlertJob(t *testing.T) {
 	ctx := context.Background()
 	d, _, st, _ := setup(t)

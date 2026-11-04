@@ -106,3 +106,15 @@ func (f *TitleFilter) Match(title string) bool {
 	}
 	return true
 }
+
+// Excluded reports whether a title has a negative keyword, without asking for
+// a positive one: for titles a person's own saved search already chose.
+func (f *TitleFilter) Excluded(title string) bool {
+	lower := strings.ToLower(title)
+	for _, m := range f.negative {
+		if m(lower) {
+			return true
+		}
+	}
+	return false
+}

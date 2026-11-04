@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/guomengnick/job-radar/internal/alertlinkedin"
 	"github.com/guomengnick/job-radar/internal/store"
 )
 
@@ -210,5 +211,104 @@ func TestIngestMailStoresContacts(t *testing.T) {
 	}
 	if p, _ := st.PendingJobs(ctx); len(p) != 3 {
 		t.Errorf("pending = %d, want 3", len(p))
+	}
+}
+
+const sesLinkedIn = "Authentication-Results: amazonses.com; spf=fail (spfCheck: domain of gmail.com does not designate 192.0.2.4) client-ip=192.0.2.4; dkim=pass header.i=@linkedin.com; dmarc=pass header.from=linkedin.com;\r\n"
+
+func linkedInHTML(t *testing.T) string {
+	t.Helper()
+	b, err := os.ReadFile("../alertlinkedin/testdata/alert.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+func TestIngestMailLinkedIn(t *testing.T) {
+	ctx := context.Background()
+	alert := linkedInHTML(t)
+	for _, tt := range []struct {
+		name, raw, status, reason string
+	}{
+		// Gmail forwards the alert unchanged, so LinkedIn's own signature
+		// still passes DMARC at SES although SPF names Gmail's server.
+		{"a forwarded alert is parsed", mailWith(sesLinkedIn, "LinkedIn 職缺配對通知 <jobalerts-noreply@linkedin.com>", "範例 AI 的 Senior Software Engineer", alert), "parsed", "linkedin_alert"},
+		{"a newsletter is not a job list", mailWith(sesLinkedIn, "newsletters-noreply@linkedin.com", "週報", "<p>x</p>"), "ignored", "other_linkedin_mail"},
+		{"an alert without LinkedIn's signature is not", mail("jobalerts-noreply@linkedin.com", alert), "ignored", "unverified_sender"},
+		{"a new layout fails", mailWith(sesLinkedIn, "jobalerts-noreply@linkedin.com", "s", "<p>新版面</p>"), "failed", "no jobs found: the LinkedIn layout may have changed"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			d, _, _, _ := setup(t)
+			var m bytes.Buffer
+			d.Metrics = &m
+			o, err := IngestMail(ctx, d, "inbound/k", strings.NewReader(tt.raw))
+			if err != nil || o.Status != tt.status || o.Reason != tt.reason || o.Sender != "linkedin.com" {
+				t.Errorf("outcome = %+v, %v", o, err)
+			}
+			// The heartbeat counts 104's alerts; LinkedIn's must not quiet it.
+			if !strings.Contains(m.String(), `"AlertsParsed":0`) {
+				t.Errorf("metrics = %s", m.String())
+			}
+		})
+	}
+}
+
+func TestIngestMailStoresLinkedInJobs(t *testing.T) {
+	ctx := context.Background()
+	d, _, mem, _ := setup(t)
+	st := &recorder{Store: mem, jobs: map[string]store.JobRecord{}}
+	d.Store = st
+	raw := mailWith(sesLinkedIn, "jobalerts-noreply@linkedin.com", "s", linkedInHTML(t))
+	o, err := IngestMail(ctx, d, "inbound/k", strings.NewReader(raw))
+	if err != nil || o.Jobs != 4 || o.New != 4 || o.Pending != 2 {
+		t.Fatalf("outcome = %+v, %v", o, err)
+	}
+	for key, want := range map[string]struct {
+		state      store.JobState
+		class, why string
+	}{
+		"linkedin#1000000001": {store.JobNew, "A", "taiwan_remote"},       // 台灣 (遠距)
+		"linkedin#1000000002": {store.JobNew, "B", "hybrid_days_unknown"}, // 新竹地區 (混合型)
+		"linkedin#1000000003": {store.JobSeen, "B", "title_excluded"},     // Principal: a board negative word
+		"linkedin#1000000004": {store.JobSeen, "C", "foreign_location"},   // 海得拉巴德 (遠距)
+	} {
+		r := st.jobs[key]
+		if r.State != want.state || r.Class != want.class || r.Reason != want.why {
+			t.Errorf("%s = %+v", key, r)
+		}
+	}
+	r := st.jobs["linkedin#1000000001"]
+	if r.URL != "https://www.linkedin.com/jobs/view/1000000001/" || r.Board != "範例 AI" || r.Location != "台灣" || r.WorkMode != "remote" {
+		t.Errorf("record = %+v", r)
+	}
+	for _, j := range st.jobs {
+		if strings.Contains(j.URL, "Token") {
+			t.Errorf("a sign-in token was kept: %s", j.URL)
+		}
+	}
+	runs, _ := st.RunsSince(ctx, d.Now().Add(-time.Hour))
+	if len(runs) != 1 || runs[0].ATS != "linkedin" || runs[0].Task != "mail" {
+		t.Errorf("runs = %+v", runs)
+	}
+}
+
+func TestSendLinkedIn(t *testing.T) {
+	d, _, _, _ := setup(t)
+	for _, c := range []struct {
+		location, mode string
+		want           bool
+	}{
+		{"台灣", "remote", true},
+		{"台中-彰化地區", "", true},
+		{"Taipei City", "hybrid", true},
+		{"台北", "", false},
+		{"Hsinchu City", "onsite", false},
+		{"新加坡", "remote", false},
+	} {
+		r := d.linkedInJob(alertlinkedin.Job{ID: "1", Title: "Backend Engineer", Location: c.location, WorkMode: c.mode}, time.Time{}, time.Time{})
+		if (r.State == store.JobNew) != c.want {
+			t.Errorf("%s %s: %+v", c.location, c.mode, r)
+		}
 	}
 }

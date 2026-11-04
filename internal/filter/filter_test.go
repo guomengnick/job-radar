@@ -109,6 +109,8 @@ func TestLocationClassifier(t *testing.T) {
 		{"empty", ats.Job{Location: ""}, ClassB},
 		{"office abroad", ats.Job{Location: "Tokyo, Japan"}, ClassC},
 		{"office city no mode", ats.Job{Location: "Berlin"}, ClassC},
+		{"remote in a city LinkedIn names in Chinese", ats.Job{Location: "海得拉巴德", WorkplaceType: "remote"}, ClassC},
+		{"office in a Chinese city", ats.Job{Location: "大連市", WorkplaceType: "onsite"}, ClassC},
 		{"office city unknown country", ats.Job{Location: "Wroclaw"}, ClassD},
 		{"taipei no mode", ats.Job{Location: "Taipei, Taiwan"}, ClassB},
 		{"taiwan remote", ats.Job{Location: "Taipei, Taiwan", WorkplaceType: "remote"}, ClassA},

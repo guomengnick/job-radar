@@ -10,8 +10,10 @@ It has three sources:
 - **Job boards.** Every day it checks ~16,000 company boards on Greenhouse,
   Lever and Ashby through their public APIs, and keeps the postings whose
   title, location and skills match my rules.
-- **104 job alerts.** 104, Taiwan's largest job site, emails me its matches.
-  The radar receives that mail (SES → S3 → Lambda) and reads the jobs out of it.
+- **104 and LinkedIn job alerts.** 104, Taiwan's largest job site, and
+  LinkedIn email me their matches. The radar receives that mail (SES → S3 →
+  Lambda), checks it really came from them, and reads the jobs out of it.
+  LinkedIn's links carry a one-time sign-in token, so only the job number is kept.
 - **Pages I open.** A Chrome extension sends the posting I am reading, or all
   the 104 job tabs I have open, to be judged.
 

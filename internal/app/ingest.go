@@ -12,6 +12,8 @@ import (
 
 	"github.com/guomengnick/job-radar/config"
 	"github.com/guomengnick/job-radar/internal/alert104"
+	"github.com/guomengnick/job-radar/internal/alertlinkedin"
+	"github.com/guomengnick/job-radar/internal/ats"
 	"github.com/guomengnick/job-radar/internal/filter"
 	"github.com/guomengnick/job-radar/internal/mailin"
 	"github.com/guomengnick/job-radar/internal/metrics"
@@ -26,12 +28,15 @@ const maxMailBytes = 20 << 20
 const (
 	alertATS   = "104"
 	contactATS = "104-contact"
+	// linkedinATS is the ATS field of jobs from LinkedIn's alerts, which
+	// the user's Gmail forwards.
+	linkedinATS = "linkedin"
 )
 
 // jobAlertSenders are the domains whose mail becomes jobs (subdomains count).
 // Anything else, such as a test message or a mailbox's forwarding
 // confirmation, is only logged.
-var jobAlertSenders = []string{"104.com.tw"}
+var jobAlertSenders = []string{"104.com.tw", "linkedin.com"}
 
 // forwarders are the mail services allowed to pass on a 104 alert. Outlook's
 // redirect rule rewrites the message, which breaks 104's own DKIM signature
@@ -48,8 +53,9 @@ type MailOutcome struct {
 	Jobs, New, Pending int
 }
 
-// IngestMail reads one message that SES stored and turns verified 104 mail
-// into records: a match alert into its jobs, a contact into one entry. A message that cannot be parsed is reported in the
+// IngestMail reads one message that SES stored and turns verified mail into
+// records: a 104 match alert or a LinkedIn job alert into its jobs, a 104
+// contact into one entry. A message that cannot be parsed is reported in the
 // outcome, not returned as an error: a retry would fail the same way, and the
 // raw copy stays in the bucket for a later re-run. Read and store errors are
 // returned, so the Lambda's asynchronous retry covers transient failures; the
@@ -65,6 +71,25 @@ func IngestMail(ctx context.Context, d Deps, key string, raw io.Reader) (MailOut
 	var storeErr error
 	switch {
 	case o.Status != "verified":
+	case under(o.Sender, "linkedin.com"):
+		if m.From != alertlinkedin.Sender {
+			o.Status, o.Reason = "ignored", "other_linkedin_mail" // newsletters, messages
+			break
+		}
+		o.Status, o.Reason = "parsed", "linkedin_alert"
+		jobs, err := alertlinkedin.Parse(m.HTML)
+		if err != nil {
+			o.Status, o.Reason = "failed", err.Error()
+			break
+		}
+		now := d.Now()
+		recs := make([]store.JobRecord, len(jobs))
+		for i, j := range jobs {
+			recs[i] = d.linkedInJob(j, m.Date, now)
+		}
+		run, err := d.saveMailJobs(ctx, linkedinATS, recs)
+		o.Jobs, o.New, o.Pending = run.JobsFetched, run.JobsNew, run.JobsPending
+		storeErr = err
 	case alert104.IsMatchAlert(m.Subject):
 		o.Status, o.Reason = "parsed", "alert"
 		jobs, err := alert104.Parse(m.HTML)
@@ -72,7 +97,12 @@ func IngestMail(ctx context.Context, d Deps, key string, raw io.Reader) (MailOut
 			o.Status, o.Reason = "failed", err.Error()
 			break
 		}
-		run, err := d.saveAlertJobs(ctx, m, jobs)
+		now := d.Now()
+		recs := make([]store.JobRecord, len(jobs))
+		for i, j := range jobs {
+			recs[i] = d.alertJob(j, m.Date, now)
+		}
+		run, err := d.saveMailJobs(ctx, alertATS, recs)
 		o.Jobs, o.New, o.Pending = run.JobsFetched, run.JobsNew, run.JobsPending
 		storeErr = err
 	default:
@@ -89,6 +119,8 @@ func IngestMail(ctx context.Context, d Deps, key string, raw io.Reader) (MailOut
 		storeErr = fmt.Errorf("store %s: %w", key, storeErr)
 	}
 	if d.Metrics != nil {
+		// Only a 104 alert counts as one: the alarm for 48 hours without a 104
+		// alert must not be quieted by LinkedIn's.
 		metrics.EmitMail(d.Metrics, o.Status, o.Status == "parsed" && o.Reason == "alert", d.Now())
 	}
 	d.Log.Info("mail ingested", "key", o.Key, "sender", o.Sender, "status", o.Status, "reason", o.Reason,
@@ -96,8 +128,8 @@ func IngestMail(ctx context.Context, d Deps, key string, raw io.Reader) (MailOut
 	return o, storeErr
 }
 
-// classifyMail returns status "verified" for mail from 104 that passed the
-// sender check, which the caller then reads.
+// classifyMail returns status "verified" for mail from a job alert sender
+// that passed the sender check, which the caller then reads.
 func classifyMail(b []byte) (m *mailin.Message, sender, status, reason string) {
 	if len(b) > maxMailBytes {
 		return nil, "", "failed", "too_large"
@@ -118,17 +150,24 @@ func classifyMail(b []byte) (m *mailin.Message, sender, status, reason string) {
 
 func isJobAlertSender(domain string) bool {
 	for _, s := range jobAlertSenders {
-		if domain == s || strings.HasSuffix(domain, "."+s) {
+		if under(domain, s) {
 			return true
 		}
 	}
 	return false
 }
 
+// under reports whether domain is parent or one of its subdomains.
+func under(domain, parent string) bool {
+	return domain == parent || strings.HasSuffix(domain, "."+parent)
+}
+
 // verified reports whether a check nobody outside can fake passed for the
-// From domain: SES's DMARC result when 104 mailed us directly, or, for mail a
-// forwarder redirected, the forwarder's DKIM signature on the copy plus the
-// DMARC result its server recorded when the alert first arrived there.
+// From domain: SES's DMARC result when the sender's own signature arrived
+// intact (104 mailing us directly, or a LinkedIn alert Gmail forwarded
+// unchanged), or, for mail a forwarder rewrote, the forwarder's DKIM
+// signature on the copy plus the DMARC result its server recorded when the
+// alert first arrived there.
 //
 // Each server adds its header on top, so SES's is the first and the
 // forwarder's is the one just below it; a sender's fake headers can only sit
@@ -190,15 +229,13 @@ func (r results) pass(method, prop, value string) bool {
 	return false
 }
 
-// saveAlertJobs records each job of one alert. A job already stored, from an
+// saveMailJobs records each job of one alert. A job already stored, from an
 // earlier alert or from this one on a retry, is left as it was, so no job is
-// sent twice. The run record feeds the digest's 104 line.
-func (d Deps) saveAlertJobs(ctx context.Context, m *mailin.Message, jobs []alert104.Job) (store.Run, error) {
-	now := d.Now()
-	run := store.Run{ATS: alertATS, Task: "mail", StartedAt: now, JobsFetched: len(jobs), NewByClass: map[string]int{}}
+// sent twice. The run record feeds the digest's mail lines.
+func (d Deps) saveMailJobs(ctx context.Context, source string, recs []store.JobRecord) (store.Run, error) {
+	run := store.Run{ATS: source, Task: "mail", StartedAt: d.Now(), JobsFetched: len(recs), NewByClass: map[string]int{}}
 	var errs []error
-	for _, j := range jobs {
-		rec := d.alertJob(j, m.Date, now)
+	for _, rec := range recs {
 		if rec.State == store.JobNew {
 			run.JobsMatched++
 		}
@@ -270,6 +307,47 @@ func (d Deps) saveContact(ctx context.Context, m *mailin.Message, c alert104.Con
 	_, err := d.Store.InsertJobIfNew(ctx, rec)
 	return err
 }
+
+// linkedInJob judges one LinkedIn job. The user's own saved search chose
+// it, so the title only has to avoid the excluded words (the board list and
+// the springboard list). Then the place decides (sendLinkedIn); the keyword
+// score, which can read the title alone since the mail has no description,
+// ranks the list but does not filter it.
+func (d Deps) linkedInJob(j alertlinkedin.Job, posted, now time.Time) store.JobRecord {
+	v := d.Loc.Classify(ats.Job{Title: j.Title, Location: j.Location, WorkplaceType: j.WorkMode})
+	score, skills := d.Scorer.Score(j.Title, "")
+	state, reason := store.JobSeen, v.Reason
+	switch sb := d.Springboard.Evaluate(j.Title, ""); {
+	case d.Title.Excluded(j.Title):
+		reason = "title_excluded"
+	case !sb.Pass:
+		reason = sb.Reason
+	case sendLinkedIn(v, j.Location, score, d.Cfg.Notify):
+		state = store.JobNew
+	}
+	return store.JobRecord{
+		Key: linkedinATS + "#" + j.ID, ATS: linkedinATS, Board: j.Company, Title: j.Title, URL: j.URL(),
+		Location: j.Location, WorkMode: v.WorkMode, Class: string(v.Class), Reason: reason,
+		Score: score, Skills: skills, PostedAt: posted, FirstSeen: now, State: state,
+	}
+}
+
+// sendLinkedIn says which LinkedIn jobs the digest lists. Anything class A
+// (remote from Taiwan, or worldwide) is; in Taiwan, a Taichung job and one
+// LinkedIn marks hybrid, whose office days need a look. A Taipei or Hsinchu
+// job without a work mode is only counted: with no description, nothing says
+// it can be done from Taichung. Elsewhere the board rules apply.
+func sendLinkedIn(v filter.Verdict, location string, score int, r config.NotifyRules) bool {
+	switch {
+	case v.Class == filter.ClassA:
+		return true
+	case v.InTaiwan:
+		return v.Class == filter.ClassB && (v.WorkMode == "hybrid" || taichung.MatchString(location))
+	}
+	return filter.ShouldNotify(v, score, r)
+}
+
+var taichung = regexp.MustCompile(`(?i)台中|臺中|taichung`)
 
 // placeAlertJob classes a 104 job by where it was listed. The saved searches
 // are Taichung ones plus one for remote work anywhere in Taiwan, named with
