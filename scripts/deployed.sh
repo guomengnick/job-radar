@@ -12,9 +12,18 @@ git fetch -q origin main
 main=$(git rev-parse --short=7 origin/main)
 all_main=yes
 
+# Listing first, outside the loop: a failure inside `for f in $(...)` is
+# not seen by set -e, so an expired login listed nothing and the script
+# still said every function runs main.
+functions=$(aws lambda list-functions --region "$region" --output text \
+	--query "Functions[?starts_with(FunctionName, 'job-radar-')].FunctionName")
+if [ -z "$functions" ]; then
+	echo "no job-radar functions found in $region" >&2
+	exit 1
+fi
+
 printf '%-20s %-8s %-10s %s\n' function commit "vs main" "updated (UTC)"
-for f in $(aws lambda list-functions --region "$region" --output text \
-	--query "Functions[?starts_with(FunctionName, 'job-radar-')].FunctionName"); do
+for f in $functions; do
 	set -- $(aws lambda get-function --region "$region" --function-name "$f" --output text \
 		--query '[Code.Location, Configuration.LastModified]')
 	curl -sf -o "$dir/$f.zip" "$1"
