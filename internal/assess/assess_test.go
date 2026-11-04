@@ -150,16 +150,19 @@ func TestCleanHoldsTheCaps(t *testing.T) {
 }
 
 func TestAssessDropsSuggestedJobs(t *testing.T) {
-	page := "工作內容\n後端 API\n聯絡人\n王小姐\n職場安全提醒\n適合你大展身手的工作\n別家的職缺：面試前測驗，請寄 email"
+	page104 := "工作內容\n後端 API\n聯絡人\n王小姐\n職場安全提醒\n適合你大展身手的工作\n別家的職缺：面試前測驗，請寄 email"
+	linkedIn := "範例 AI\nSenior Software Engineer\n台灣\n遠距\n關於該職缺\n後端 API\n設定相似職缺通知\n關於本公司\n人氣員工內容\n更多職缺\nStaff Engineer\n台北（遠距）"
 	for _, c := range []struct {
-		url, want, gone string
+		url, text, want, gone string
 	}{
-		{"https://www.104.com.tw/job/aaa01?jobsource=match_mail", "王小姐", "別家的職缺"},
-		{"https://jobs.example.com/p/42", "別家的職缺", ""}, // not 104: sent whole
+		{"https://www.104.com.tw/job/aaa01?jobsource=match_mail", page104, "王小姐", "別家的職缺"},
+		{"https://www.linkedin.com/jobs/view/1000000001/", linkedIn, "關於該職缺\n後端 API", "人氣員工內容"},
+		{"https://www.linkedin.com/jobs/view/1000000001/", strings.Replace(linkedIn, "設定相似職缺通知", "", 1), "關於本公司", "台北（遠距）"},
+		{"https://jobs.example.com/p/42", page104, "別家的職缺", ""}, // another site: sent whole
 	} {
 		f := &fakeAPI{status: 200, reply: goodReply}
 		cl := Client{APIKey: "k", Model: "m", BaseURL: f.serve(t).URL}
-		if _, _, err := cl.Assess(context.Background(), "p", Page{URL: c.url, Text: page}); err != nil {
+		if _, _, err := cl.Assess(context.Background(), "p", Page{URL: c.url, Text: c.text}); err != nil {
 			t.Fatal(err)
 		}
 		user := userText(t, f.got)

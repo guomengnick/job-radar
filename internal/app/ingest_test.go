@@ -330,3 +330,11 @@ func TestIngestMailCheckedByGmail(t *testing.T) {
 		t.Errorf("Gmail's failed check is still a failure: %+v", o)
 	}
 }
+
+func TestLinkedInFirmwareIsExcluded(t *testing.T) {
+	d, _, _, _ := setup(t)
+	r := d.linkedInJob(alertlinkedin.Job{ID: "1", Title: "GL - Firmware Engineer – Global Brand Company", Location: "New Taipei City", WorkMode: "hybrid"}, time.Time{}, time.Time{})
+	if r.State == store.JobNew || r.Reason != "title_excluded" {
+		t.Errorf("a firmware role is not listed: %+v", r)
+	}
+}
