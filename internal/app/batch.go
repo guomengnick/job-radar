@@ -42,6 +42,9 @@ func jdName(key string) string {
 	if code, ok := strings.CutPrefix(key, alertATS+"#"); ok {
 		return "jd/104/" + code + ".json"
 	}
+	if id, ok := strings.CutPrefix(key, linkedinATS+"#"); ok {
+		return "jd/linkedin/" + id + ".json"
+	}
 	sum := sha256.Sum256([]byte(key))
 	return "jd/web/" + hex.EncodeToString(sum[:8]) + ".json"
 }

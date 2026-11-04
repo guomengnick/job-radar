@@ -150,11 +150,29 @@ func Read(msg *anthropic.Message) (Assessment, Usage, error) {
 // pass for its own.
 const suggestedJobs = "職場安全提醒"
 
+// linkedInCuts are where a LinkedIn job page (/jobs/view/<id>) stops
+// describing its own job, in order of preference. The top of the page (title,
+// place, work mode) and 關於該職缺 are the job; then come an alert box
+// (設定相似職缺通知), the company, posts by its employees, and 更多職缺:
+// other companies' jobs, each tagged with its own work mode ("台灣（遠距）").
+// On 8 pages read on 2026-11-04 the posting was 25–60% of the text. The
+// labels are those of an account set to Traditional Chinese; a page without
+// them is sent whole.
+var linkedInCuts = []string{"設定相似職缺通知", "更多職缺"}
+
 // postingText is the part of the page that is the posting: a 104 job page
-// up to suggestedJobs, any other page whole.
+// up to suggestedJobs, a LinkedIn job page up to the first of linkedInCuts,
+// any other page whole.
 func postingText(p Page) string {
-	if strings.Contains(p.URL, "104.com.tw/job/") {
-		if i := strings.Index(p.Text, suggestedJobs); i > 0 {
+	cuts := []string{}
+	switch {
+	case strings.Contains(p.URL, "104.com.tw/job/"):
+		cuts = []string{suggestedJobs}
+	case strings.Contains(p.URL, "linkedin.com/jobs/view/"):
+		cuts = linkedInCuts
+	}
+	for _, c := range cuts {
+		if i := strings.Index(p.Text, c); i > 0 {
 			return p.Text[:i]
 		}
 	}

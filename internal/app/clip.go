@@ -34,6 +34,9 @@ var ErrBadClip = errors.New("bad clip")
 
 var job104 = regexp.MustCompile(`^https?://www\.104\.com\.tw/job/([0-9a-z]+)`)
 
+// jobLinkedIn is a LinkedIn job page, whatever the host (www, tw) and query.
+var jobLinkedIn = regexp.MustCompile(`^https?://(?:[a-z]+\.)?linkedin\.com/jobs/view/(\d+)`)
+
 // Clip judges a page the user sent with the 送到雷達 button and replies on
 // Telegram. The page is kept (jdName) and the judgement stored with a
 // pointer to it, for later comparison with what the user applied to; a
@@ -83,11 +86,14 @@ func Clip(ctx context.Context, d Deps, a Assessor, n notify.Notifier, archive Pa
 	return j, nil
 }
 
-// clipKey names the job a page shows: the 104 job key, matching the alert
-// records, or the URL without its query and fragment.
+// clipKey names the job a page shows: the 104 or LinkedIn job key, matching
+// the alert records, or the URL without its query and fragment.
 func clipKey(u *url.URL) string {
 	if m := job104.FindStringSubmatch(u.String()); m != nil {
 		return alertATS + "#" + m[1]
+	}
+	if m := jobLinkedIn.FindStringSubmatch(u.String()); m != nil {
+		return linkedinATS + "#" + m[1]
 	}
 	c := *u
 	c.RawQuery, c.Fragment = "", ""

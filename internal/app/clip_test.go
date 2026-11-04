@@ -127,6 +127,20 @@ func TestBuildAssessmentApplyNotes(t *testing.T) {
 	}
 }
 
+func TestClipKeysLinkedInByJob(t *testing.T) {
+	d, _, st, _ := setup(t)
+	page := assess.Page{URL: "https://tw.linkedin.com/jobs/view/4447373156/?refId=x&trk=y", Text: "x"}
+	arch := &memArchive{}
+	if _, err := Clip(context.Background(), d, &fakeAssessor{out: judged}, notify.Writer{W: &bytes.Buffer{}}, arch, Profile{Text: "p"}, page); err != nil {
+		t.Fatal(err)
+	}
+	// The same key as the alert's record, so a job from the digest and its
+	// judgement are one job.
+	if rec, ok := st.Assessment("assess#linkedin#4447373156"); !ok || rec.JD != "jd/linkedin/4447373156.json" {
+		t.Errorf("stored %+v %v, kept %v", rec, ok, arch.names)
+	}
+}
+
 func TestClipKeysOtherSitesByURL(t *testing.T) {
 	d, _, st, _ := setup(t)
 	page := assess.Page{URL: "https://jobs.example.com/p/42?utm=x#apply", Text: "x"}

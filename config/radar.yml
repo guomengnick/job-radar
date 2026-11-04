@@ -69,6 +69,7 @@ title:
     - "Software Engineer III"
     - "Software Engineer 3"
   negative:
+    - "Firmware"
     - "Principal"
     - "Director"
     - "Head of"
