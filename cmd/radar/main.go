@@ -48,7 +48,8 @@ commands:
   digest       send the daily summary (Telegram if TELEGRAM_BOT_TOKEN and
                TELEGRAM_CHAT_ID are set, otherwise print it)
   ingest-file  read saved .eml files the way the ingest Lambda reads stored
-               mail (keep real messages outside the repository)
+               mail (keep real messages outside the repository); with
+               --checked-by mx.google.com, alerts taken from Gmail itself
   eval         judge the kept pages of the jobs in --labels again, with the
                profile in SSM or a draft (--profile), and compare with your
                labels (CSV: key,want,note; want is 投/看/不 or a score), or
@@ -88,6 +89,7 @@ func main() {
 	dryRun := fs.Bool("dry-run", false, "digest: print only, keep jobs pending")
 	labels := fs.String("labels", "", "eval: your labels, a CSV with key,want,note")
 	profile := fs.String("profile", "", "eval: a draft profile to test instead of the one in SSM")
+	checkedBy := fs.String("checked-by", "amazonses.com", "ingest-file: the receiving server whose sender check to trust")
 	fs.Parse(os.Args[2:])
 
 	level := slog.LevelInfo
@@ -101,14 +103,14 @@ func main() {
 	if cmd == "eval" || cmd == "backfill-jd" || cmd == "labels" || cmd == "dlq" || cmd == "redrive" {
 		*storeKind = "dynamo"
 	}
-	if err := run(ctx, log, cmd, fs.Args(), *statePath, *storeKind, *cfgPath, *atsName, *limit, *silent, *noBaseline, *fromFile, *dryRun, *labels, *profile); err != nil {
+	if err := run(ctx, log, cmd, fs.Args(), *statePath, *storeKind, *cfgPath, *atsName, *limit, *silent, *noBaseline, *fromFile, *dryRun, *labels, *profile, *checkedBy); err != nil {
 		log.Error(cmd+" failed", "err", err)
 		os.Exit(1)
 	}
 }
 
 func run(ctx context.Context, log *slog.Logger, cmd string, args []string, statePath, storeKind, cfgPath, atsName string,
-	limit int, silent, noBaseline bool, fromFile string, dryRun bool, labels, profilePath string) error {
+	limit int, silent, noBaseline bool, fromFile string, dryRun bool, labels, profilePath, checkedBy string) error {
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
 		return err
@@ -163,7 +165,7 @@ func run(ctx context.Context, log *slog.Logger, cmd string, args []string, state
 			if err != nil {
 				return err
 			}
-			o, err := app.IngestMail(ctx, d, path, f)
+			o, err := app.IngestMailCheckedBy(ctx, d, path, f, checkedBy)
 			f.Close()
 			if err != nil {
 				return err

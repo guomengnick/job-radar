@@ -312,3 +312,21 @@ func TestSendLinkedIn(t *testing.T) {
 		}
 	}
 }
+
+func TestIngestMailCheckedByGmail(t *testing.T) {
+	ctx := context.Background()
+	// An alert as Gmail holds it: Google's check on top, no SES header.
+	gmail := "Authentication-Results: mx.google.com; dkim=pass header.i=@linkedin.com header.s=s1; spf=pass smtp.mailfrom=linkedin.com; dmarc=pass (p=REJECT) header.from=linkedin.com\r\n"
+	raw := mailWith(gmail, "jobalerts-noreply@linkedin.com", "s", linkedInHTML(t))
+	d, _, _, _ := setup(t)
+	if o, err := IngestMail(ctx, d, "k", strings.NewReader(raw)); err != nil || o.Status != "ignored" || o.Reason != "unverified_sender" {
+		t.Errorf("the Lambda trusts SES's check only: %+v %v", o, err)
+	}
+	if o, err := IngestMailCheckedBy(ctx, d, "k", strings.NewReader(raw), "mx.google.com"); err != nil || o.Status != "parsed" || o.Pending != 2 {
+		t.Errorf("a backfill from Gmail: %+v %v", o, err)
+	}
+	forged := mailWith(strings.Replace(gmail, "dmarc=pass", "dmarc=fail", 1), "jobalerts-noreply@linkedin.com", "s", linkedInHTML(t))
+	if o, _ := IngestMailCheckedBy(ctx, d, "k", strings.NewReader(forged), "mx.google.com"); o.Status != "ignored" {
+		t.Errorf("Gmail's failed check is still a failure: %+v", o)
+	}
+}

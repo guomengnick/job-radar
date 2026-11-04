@@ -61,13 +61,21 @@ type MailOutcome struct {
 // returned, so the Lambda's asynchronous retry covers transient failures; the
 // retry is safe because a job already stored is not inserted again.
 func IngestMail(ctx context.Context, d Deps, key string, raw io.Reader) (MailOutcome, error) {
+	return IngestMailCheckedBy(ctx, d, key, raw, "amazonses.com")
+}
+
+// IngestMailCheckedBy is IngestMail for a message whose top
+// Authentication-Results header another receiving server wrote: a LinkedIn
+// alert taken from the user's own Gmail (mx.google.com) to fill in the days
+// before Gmail forwarded them.
+func IngestMailCheckedBy(ctx context.Context, d Deps, key string, raw io.Reader, server string) (MailOutcome, error) {
 	o := MailOutcome{Key: key}
 	b, err := io.ReadAll(io.LimitReader(raw, maxMailBytes+1))
 	if err != nil {
 		return o, fmt.Errorf("read %s: %w", key, err)
 	}
 	var m *mailin.Message
-	m, o.Sender, o.Status, o.Reason = classifyMail(b)
+	m, o.Sender, o.Status, o.Reason = classifyMail(b, server)
 	var storeErr error
 	switch {
 	case o.Status != "verified":
@@ -129,8 +137,9 @@ func IngestMail(ctx context.Context, d Deps, key string, raw io.Reader) (MailOut
 }
 
 // classifyMail returns status "verified" for mail from a job alert sender
-// that passed the sender check, which the caller then reads.
-func classifyMail(b []byte) (m *mailin.Message, sender, status, reason string) {
+// that passed the sender check of the server that received it, which the
+// caller then reads.
+func classifyMail(b []byte, server string) (m *mailin.Message, sender, status, reason string) {
 	if len(b) > maxMailBytes {
 		return nil, "", "failed", "too_large"
 	}
@@ -142,7 +151,7 @@ func classifyMail(b []byte) (m *mailin.Message, sender, status, reason string) {
 	switch {
 	case !isJobAlertSender(sender):
 		return m, sender, "ignored", "not_a_job_alert_sender"
-	case !verified(m):
+	case !verified(m, server):
 		return m, sender, "ignored", "unverified_sender"
 	}
 	return m, sender, "verified", ""
@@ -163,7 +172,8 @@ func under(domain, parent string) bool {
 }
 
 // verified reports whether a check nobody outside can fake passed for the
-// From domain: SES's DMARC result when the sender's own signature arrived
+// From domain, as the receiving server (SES, or Gmail for a backfill) wrote
+// it: the DMARC result when the sender's own signature arrived
 // intact (104 mailing us directly, or a LinkedIn alert Gmail forwarded
 // unchanged), or, for mail a forwarder rewrote, the forwarder's DKIM
 // signature on the copy plus the DMARC result its server recorded when the
@@ -173,9 +183,9 @@ func under(domain, parent string) bool {
 // forwarder's is the one just below it; a sender's fake headers can only sit
 // lower. Position rather than server name identifies the forwarder's header,
 // because Microsoft sometimes leaves its name out.
-func verified(m *mailin.Message) bool {
+func verified(m *mailin.Message, server string) bool {
 	h, from := m.AuthResults, m.FromDomain()
-	if len(h) == 0 || serverOf(h[0]) != "amazonses.com" {
+	if len(h) == 0 || serverOf(h[0]) != server {
 		return false
 	}
 	ses := entries(h[0])
