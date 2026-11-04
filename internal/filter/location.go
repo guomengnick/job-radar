@@ -62,7 +62,9 @@ var (
 		regexp.MustCompile(`(?i)\b(?:us|u\.s\.?|usa|united states|america|americas|amer|north america|latam|latin america|south america|canada|mexico|brazil|argentina|colombia|chile|peru)\b`),
 		regexp.MustCompile(`(?i)\b(?:emea|europe|european union|eu|uk|united kingdom|england|scotland|ireland|germany|france|spain|portugal|italy|netherlands|belgium|switzerland|austria|poland|czech|romania|bulgaria|greece|sweden|norway|denmark|finland|estonia|lithuania|latvia|ukraine|serbia|croatia|hungary|israel|turkey|egypt|nigeria|kenya|south africa|uae|united arab emirates|dubai|saudi)\b`),
 		regexp.MustCompile(`(?i)\b(?:japan|tokyo|osaka|india|bangalore|bengaluru|mumbai|pune|hyderabad|chennai|delhi|noida|gurgaon|singapore|australia|sydney|melbourne|brisbane|new zealand|auckland|vietnam|hanoi|ho chi minh|china|beijing|shanghai|shenzhen|hong kong|korea|seoul|philippines|manila|cebu|malaysia|kuala lumpur|indonesia|jakarta|thailand|bangkok|pakistan)\b`),
-		regexp.MustCompile(`(?:東京|大阪|日本|印度|新加坡|澳洲|澳大利亞|雪梨|墨爾本|紐西蘭|越南|中國|北京|上海|深圳|香港|韓國|首爾|菲律賓|馬尼拉|馬來西亞|吉隆坡|印尼|泰國|曼谷|美國|英國|德國|法國|荷蘭|加拿大|波蘭|以色列)`),
+		// LinkedIn's zh-TW mail names cities this way ("海得拉巴德 (遠距)").
+		regexp.MustCompile(`(?:東京|大阪|日本|印度|新加坡|澳洲|澳大利亞|雪梨|墨爾本|紐西蘭|越南|中國|北京|上海|深圳|香港|韓國|首爾|菲律賓|馬尼拉|馬來西亞|吉隆坡|印尼|泰國|曼谷|美國|英國|德國|法國|荷蘭|加拿大|波蘭|以色列|` +
+			`海得拉巴|邦加羅爾|班加羅爾|孟買|浦那|清奈|德里|諾伊達|古爾岡|大連|廣州|杭州|成都|蘇州|南京|武漢|西安|天津|重慶|廈門|河內|胡志明|雅加達|檳城)`),
 	}
 	// Regions wider than one country. A location naming a region and a place
 	// in it ("Bengaluru, India; APAC") is judged by the place.

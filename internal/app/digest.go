@@ -44,12 +44,13 @@ func Digest(ctx context.Context, d Deps, n notify.Notifier, o DigestOptions) (st
 		}
 		return pending[i].Score > pending[j].Score
 	})
-	// Job-board roles are capped at MaxItems; every 104 alert job and contact
-	// is listed (the user's choice), and they do not count toward the cap, so
-	// a busy alert day cannot crowd out the remote roles. Telegram gets the
-	// long message in parts.
-	boardJobs, alertJobs, contacts := splitBySource(pending)
-	shown := append(append(boardJobs[:min(len(boardJobs), d.Cfg.Notify.MaxItems)], alertJobs...), contacts...)
+	// Job-board roles are capped at MaxItems; every 104 alert job, LinkedIn
+	// alert job and contact is listed (the user's choice), and they do not
+	// count toward the cap, so a busy alert day cannot crowd out the remote
+	// roles. Telegram gets the long message in parts.
+	src := splitBySource(pending)
+	shown := append(src.board[:min(len(src.board), d.Cfg.Notify.MaxItems)], src.alert...)
+	shown = append(append(shown, src.linkedin...), src.contacts...)
 
 	// The 104 jobs the digest does not send are listed too, one line each,
 	// so the user can check what the rules drop. Failing to read them only
@@ -99,7 +100,8 @@ func leftOutAlertJobs(ctx context.Context, d Deps, since time.Time) ([]store.Job
 // BuildDigest renders the Telegram message (HTML parse mode). left holds the
 // 104 alert jobs the digest does not send, listed one line each.
 func BuildDigest(now time.Time, runs []store.Run, jobs, left []store.JobRecord, more int, expected []string) string {
-	boardJobs, alertJobs, contacts := splitBySource(jobs)
+	src := splitBySource(jobs)
+	boardJobs, alertJobs, contacts := src.board, src.alert, src.contacts
 	var b strings.Builder
 	fmt.Fprintf(&b, "<b>📡 職缺雷達 %s</b>\n\n", now.Format("01/02 15:04"))
 	writeContacts(&b, contacts)
@@ -181,6 +183,7 @@ func BuildDigest(now time.Time, runs []store.Run, jobs, left []store.JobRecord, 
 			fmt.Fprintf(&b, "注意：%s\n", html.EscapeString(strings.Join(j.Notes, "、")))
 		}
 	}
+	writeLinkedIn(&b, src.linkedin)
 	writeLeftOut(&b, left)
 	if more > 0 {
 		fmt.Fprintf(&b, "\n另有 %d 筆留到下次。\n", more)
@@ -193,20 +196,42 @@ func BuildDigest(now time.Time, runs []store.Run, jobs, left []store.JobRecord, 
 	return b.String()
 }
 
-// splitBySource separates job-board roles, 104 alert jobs and 104 contacts,
-// keeping each group's order.
-func splitBySource(jobs []store.JobRecord) (board, alert, contacts []store.JobRecord) {
+type sources struct {
+	board, alert, linkedin, contacts []store.JobRecord
+}
+
+// splitBySource separates job-board roles, 104 alert jobs, LinkedIn alert
+// jobs and 104 contacts, keeping each group's order.
+func splitBySource(jobs []store.JobRecord) sources {
+	var s sources
 	for _, j := range jobs {
 		switch j.ATS {
 		case alertATS:
-			alert = append(alert, j)
+			s.alert = append(s.alert, j)
+		case linkedinATS:
+			s.linkedin = append(s.linkedin, j)
 		case contactATS:
-			contacts = append(contacts, j)
+			s.contacts = append(s.contacts, j)
 		default:
-			board = append(board, j)
+			s.board = append(s.board, j)
 		}
 	}
-	return board, alert, contacts
+	return s
+}
+
+// writeLinkedIn lists the LinkedIn alert jobs worth a look. The mail gives
+// no description or pay, so each shows where LinkedIn says it is done from
+// and what is still to check.
+func writeLinkedIn(b *strings.Builder, jobs []store.JobRecord) {
+	if len(jobs) == 0 {
+		return
+	}
+	fmt.Fprintf(b, "\n<b>LinkedIn 職缺配對通知：%d 筆</b>\n", len(jobs))
+	for _, j := range jobs {
+		fmt.Fprintf(b, "\n[%s 技能%d] <a href=\"%s\">%s</a>\n%s｜%s\n判斷：%s\n",
+			j.Class, j.Score, html.EscapeString(j.URL), html.EscapeString(j.Title),
+			html.EscapeString(j.Board), html.EscapeString(j.Location), reasonText(j.Reason))
+	}
 }
 
 // writeLeftOut lists, one line each, the 104 jobs a rule excluded and those
@@ -268,28 +293,45 @@ func writeContacts(b *strings.Builder, contacts []store.JobRecord) {
 
 // writeMailLine sums the 104 alerts received in the window. 104 sends the
 // daily alert Tuesday to Saturday and the weekly one on Sunday, so a Monday
-// without mail is normal.
+// without mail is normal. LinkedIn's alerts get a line once one has come:
+// until the user's Gmail forwards them, none is expected.
 func writeMailLine(b *strings.Builder, runs []store.Run) {
-	var mails, listed, fresh, pending int
-	var errs []string
+	m := mailTotals(runs, alertATS)
+	if m.mails == 0 {
+		b.WriteString("📭 104 配對信：這段時間沒有收到\n")
+	} else {
+		m.write(b, "104 配對信")
+	}
+	if li := mailTotals(runs, linkedinATS); li.mails > 0 {
+		li.write(b, "LinkedIn 通知")
+	}
+}
+
+type mailCounts struct {
+	mails, listed, fresh, pending int
+	errs                          []string
+}
+
+func mailTotals(runs []store.Run, source string) mailCounts {
+	var m mailCounts
 	for _, r := range runs {
-		if r.Task != "mail" {
+		if r.Task != "mail" || r.ATS != source {
 			continue
 		}
-		mails++
-		listed += r.JobsFetched
-		fresh += r.JobsNew
-		pending += r.JobsPending
+		m.mails++
+		m.listed += r.JobsFetched
+		m.fresh += r.JobsNew
+		m.pending += r.JobsPending
 		if r.Error != "" {
-			errs = append(errs, r.Error)
+			m.errs = append(m.errs, r.Error)
 		}
 	}
-	if mails == 0 {
-		b.WriteString("📭 104 配對信：這段時間沒有收到\n")
-		return
-	}
-	fmt.Fprintf(b, "📬 104 配對信 %d 封｜職缺 %d｜第一次出現 %d｜值得看 %d\n", mails, listed, fresh, pending)
-	for _, e := range errs {
+	return m
+}
+
+func (m mailCounts) write(b *strings.Builder, name string) {
+	fmt.Fprintf(b, "📬 %s %d 封｜職缺 %d｜第一次出現 %d｜值得看 %d\n", name, m.mails, m.listed, m.fresh, m.pending)
+	for _, e := range m.errs {
 		fmt.Fprintf(b, "   寫入錯誤：%s\n", html.EscapeString(truncate(e, 200)))
 	}
 }
