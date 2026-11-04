@@ -4,19 +4,22 @@
 // - clip: read the text of the page the user has open and send it to the
 //   job-radar endpoint (POST /). The result arrives on Telegram; the badge
 //   shows the score, "…" while waiting, or "✗" on failure.
-// - list / open: ask the endpoint for the 104 alert jobs (GET /jobs) and open
-//   the ones the user ticked, one tab at a time, in a new window.
-// - batch: read every open 104 job tab and send them all (POST /batch); the
-//   model judges them as one batch and the summary arrives on Telegram.
+// - list / open: ask the endpoint for the alert jobs (GET /jobs: 104's, and
+//   the LinkedIn ones the digest lists) and open the ones the user ticked,
+//   one tab at a time, in a new window.
+// - batch: read every open 104 or LinkedIn job tab and send them all (POST
+//   /batch); the model judges them as one batch and the summary arrives on
+//   Telegram.
 //
 // - applied: done.js saw 104's 應徵成功 page; the application is recorded
 //   (POST /applied) for the weekly report.
 // - morning: at the time set on the options page (09:00 by default) a
-//   notification says how many new 104 jobs the digest listed; clicking it
+//   notification says how many new jobs the digest listed; clicking it
 //   opens them as the popup's button does.
 //
 // Pages are read only when the user presses a button: the current tab
-// (activeTab), or the open 104 job tabs (the www.104.com.tw permission).
+// (activeTab), or the open 104 and LinkedIn job tabs (the www.104.com.tw and
+// www.linkedin.com permissions).
 // Tabs are opened only from a click on the popup's button or the morning
 // notification, never in the background.
 
@@ -28,11 +31,13 @@ try {
   // No local config: the options page is the only source.
 }
 
-// The pause between two new tabs. A person opening links goes no faster,
-// and 50 pages take about a minute and a quarter.
-const OPEN_GAP_MS = 1500;
-const JOB_URL = /^https:\/\/www\.104\.com\.tw\/job\/[0-9a-z]+$/;
-const JOB_TABS = "https://www.104.com.tw/job/*";
+// The pause between two new tabs: 3 to 5 seconds, a different one each time
+// (the user's choice, 2026-11-04). 20 pages take about a minute and a half.
+const OPEN_GAP_MIN_MS = 3000;
+const OPEN_GAP_SPREAD_MS = 2000;
+const openGap = () => OPEN_GAP_MIN_MS + Math.random() * OPEN_GAP_SPREAD_MS;
+const JOB_URL = /^https:\/\/(?:www\.104\.com\.tw\/job\/[0-9a-z]+|www\.linkedin\.com\/jobs\/view\/\d+\/?)$/;
+const JOB_TABS = ["https://www.104.com.tw/job/*", "https://www.linkedin.com/jobs/view/*"];
 // The model reads at most this much of a page (assess.MaxPageRunes), and one
 // request must stay under the endpoint's 5 MB.
 const PAGE_CHARS = 20000;
@@ -140,7 +145,7 @@ async function listJobs(since) {
 let opening = false;
 
 // openJobs opens the first job in a new window and the rest as background
-// tabs there, one every OPEN_GAP_MS. The badge counts down what is left.
+// tabs there, one every openGap(). The badge counts down what is left.
 // Each tabs call also keeps this worker alive while it waits.
 async function openJobs(urls) {
   const list = (urls || []).filter((u) => JOB_URL.test(u));
@@ -151,7 +156,7 @@ async function openJobs(urls) {
     const win = await chrome.windows.create({ url: list[0], focused: true });
     for (let i = 1; i < list.length; i++) {
       await chrome.action.setBadgeText({ text: String(list.length - i) });
-      await new Promise((r) => setTimeout(r, OPEN_GAP_MS));
+      await new Promise((r) => setTimeout(r, openGap()));
       await chrome.tabs.create({ windowId: win.id, url: list[i], active: false });
     }
   } finally {
@@ -173,7 +178,7 @@ async function sendBatch() {
   await chrome.action.setBadgeText({ text: "…" });
   try {
     const tabs = await chrome.tabs.query({ url: JOB_TABS });
-    if (tabs.length === 0) throw new Error("沒有開著的 104 職缺頁");
+    if (tabs.length === 0) throw new Error("沒有開著的 104 或 LinkedIn 職缺頁");
     const pages = [];
     for (const tab of tabs) {
       let page = { url: tab.url, title: tab.title || "", text: "" };
@@ -305,14 +310,14 @@ async function morningNotice(test) {
   if (!test) await chrome.storage.local.set({ morningShown: today, morningSince: now });
   const jobs = body.jobs || [];
   const count = (g) => jobs.filter((j) => j.group === g).length;
-  const urls = jobs.filter((j) => j.group === "digest").map((j) => j.url);
+  const urls = jobs.filter((j) => j.group === "digest" || j.group === "linkedin").map((j) => j.url);
   await chrome.storage.local.set({ morningURLs: urls });
   if (urls.length === 0) {
-    await notify("📡 今天沒有新的 104 職缺", `台中以外 ${count("elsewhere")}、規則排除 ${count("excluded")} 在小視窗裡可以看。`, false);
+    await notify("📡 今天沒有新的職缺", `台中以外 ${count("elsewhere")}、規則排除 ${count("excluded")} 在小視窗裡可以看。`, false);
   } else {
     await notify(
-      `📡 ${urls.length} 個新的 104 職缺`,
-      `按一下開啟（每 1.5 秒一個，約 ${Math.ceil(urls.length * OPEN_GAP_MS / 1000)} 秒）。台中以外 ${count("elsewhere")}、規則排除 ${count("excluded")} 在小視窗裡。`,
+      `📡 ${urls.length} 個新的職缺（104、LinkedIn）`,
+      `按一下開啟（每 3～5 秒一個，約 ${Math.ceil(urls.length * 4)} 秒）。台中以外 ${count("elsewhere")}、規則排除 ${count("excluded")} 在小視窗裡。`,
       true,
     );
   }

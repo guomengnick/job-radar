@@ -3,10 +3,11 @@
 
 const GROUPS = [
   { id: "digest", label: "日報有列的（遠端、台中）" },
+  { id: "linkedin", label: "LinkedIn 日報有列的" },
   { id: "elsewhere", label: "台中以外、非遠端" },
   { id: "excluded", label: "被規則排除的（職稱、薪資）" },
 ];
-const GAP_SECONDS = 1.5; // OPEN_GAP_MS in background.js
+const GAP_SECONDS = 4; // openGap() in background.js: 3 to 5 seconds
 const MAX_DAYS_BACK = 13; // the endpoint allows 14 days
 
 const day = document.getElementById("day");
@@ -71,16 +72,16 @@ async function load() {
   }
   jobs = res.jobs || [];
   render();
-  say(jobs.length === 0 ? "這段時間沒有新的 104 職缺。" : "");
+  say(jobs.length === 0 ? "這段時間沒有新的職缺。" : "");
 }
 
 const batchButton = document.getElementById("batch");
 const batchStatus = document.getElementById("batch-status");
 
 async function countJobTabs() {
-  const tabs = await chrome.tabs.query({ url: "https://www.104.com.tw/job/*" });
+  const tabs = await chrome.tabs.query({ url: ["https://www.104.com.tw/job/*", "https://www.linkedin.com/jobs/view/*"] });
   batchButton.disabled = tabs.length === 0;
-  batchButton.textContent = tabs.length === 0 ? "沒有開著的 104 職缺頁" : `送出開著的 104 職缺（${tabs.length} 頁）`;
+  batchButton.textContent = tabs.length === 0 ? "沒有開著的職缺頁" : `送出開著的職缺頁（${tabs.length} 頁）`;
 }
 
 batchButton.addEventListener("click", async () => {

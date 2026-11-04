@@ -9,8 +9,8 @@ import (
 	"github.com/guomengnick/job-radar/internal/store"
 )
 
-// ListedJob is one 104 alert job as the browser extension shows it before
-// opening the pages.
+// ListedJob is one alert job (104 or LinkedIn) as the browser extension
+// shows it before opening the pages.
 type ListedJob struct {
 	URL      string   `json:"url"`
 	Title    string   `json:"title"`
@@ -34,9 +34,13 @@ const (
 	GroupElsewhere = "elsewhere"
 	// GroupExcluded jobs failed a title or pay rule.
 	GroupExcluded = "excluded"
+	// GroupLinkedIn jobs are the LinkedIn alert jobs the digest lists. The
+	// others (abroad, Taipei or Hsinchu with no work mode) are not offered:
+	// there are hundreds a week.
+	GroupLinkedIn = "linkedin"
 )
 
-var groupOrder = map[string]int{GroupDigest: 0, GroupElsewhere: 1, GroupExcluded: 2}
+var groupOrder = map[string]int{GroupDigest: 0, GroupLinkedIn: 1, GroupElsewhere: 2, GroupExcluded: 3}
 
 // MaxListWindow is how far back the extension may ask for jobs.
 const MaxListWindow = 14 * 24 * time.Hour
@@ -75,6 +79,33 @@ func ListAlertJobs(ctx context.Context, d Deps, since time.Time) ([]ListedJob, e
 		return a.Score > b.Score
 	})
 	return out, nil
+}
+
+// ListOpenJobs is what the extension may open: every 104 alert job, as
+// ListAlertJobs gives them, and the LinkedIn alert jobs the digest lists.
+func ListOpenJobs(ctx context.Context, d Deps, since time.Time) ([]ListedJob, error) {
+	out, err := ListAlertJobs(ctx, d, since)
+	if err != nil {
+		return nil, err
+	}
+	recs, err := d.Store.JobsSince(ctx, linkedinATS, since)
+	if err != nil {
+		return nil, err
+	}
+	var li []ListedJob
+	for _, r := range recs {
+		if r.State != store.JobNew && r.State != store.JobNotified {
+			continue
+		}
+		li = append(li, ListedJob{
+			URL: r.URL, Title: r.Title, Company: r.Board, Location: r.Location,
+			Class: r.Class, Score: r.Score, Group: GroupLinkedIn, Reason: reasonText(r.Reason),
+		})
+	}
+	sort.SliceStable(li, func(i, j int) bool { return li[i].Class < li[j].Class })
+	// After the 104 digest group, before the 104 jobs left out.
+	at := sort.Search(len(out), func(i int) bool { return groupOrder[out[i].Group] > groupOrder[GroupLinkedIn] })
+	return append(out[:at], append(li, out[at:]...)...), nil
 }
 
 // alertGroup reads a stored 104 job's group from what alertJob decided: a
