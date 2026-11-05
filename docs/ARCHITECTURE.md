@@ -21,6 +21,57 @@
 
 ## 2. 架構
 
+### 2.1 總覽
+
+GitHub 會把下面的 Mermaid 畫成圖。左邊是「什麼事情會叫醒系統」，中間是 7 個 Lambda，右邊是資料存在哪、結果送到哪。
+
+```mermaid
+flowchart LR
+  subgraph trigger["觸發"]
+    SCH["EventBridge Scheduler<br/>台北時間排程"]
+    MAIL["104 配對信<br/>LinkedIn 職缺通知"]
+    EXT["Chrome 擴充功能<br/>使用者按了才動"]
+    TGB["Telegram 按鈕"]
+  end
+
+  subgraph fn["Lambda（同一個 Go 執行檔）"]
+    scan
+    sync
+    digest
+    batch
+    ingest
+    clip
+    alarm
+  end
+
+  subgraph data["儲存"]
+    DDB[("DynamoDB<br/>boards・jobs・runs")]
+    S3[("S3<br/>信件・職缺頁・批次")]
+    SSM[("SSM<br/>密鑰・評分檔案")]
+  end
+
+  ATS["Greenhouse・Lever・Ashby API"]
+  CL["Claude API<br/>單頁・Message Batches"]
+  TG["Telegram（手機）"]
+  CW["CloudWatch 指標・告警"]
+
+  SCH --> scan & sync & digest & batch
+  scan --> ATS
+  sync -->|公開看板清單| GH["GitHub raw"]
+  MAIL -->|SES 收信| S3
+  S3 -->|新信件| ingest
+  EXT & TGB -->|Function URL + 共享密鑰| clip
+  clip & batch --> CL
+  scan & sync & ingest & clip & batch & digest --> DDB
+  scan & clip & batch --> S3
+  fn -.->|讀取| SSM
+  digest & clip & batch --> TG
+  scan -->|EMF 指標| CW
+  CW -->|SNS| alarm --> TG
+```
+
+### 2.2 排程與路徑（詳細）
+
 ```
 EventBridge Scheduler（Asia/Taipei）
   08:00       ─► scan ×3（greenhouse｜lever｜ashby）
@@ -34,6 +85,7 @@ EventBridge Scheduler（Asia/Taipei）
   08:50       ─► batch（board-assess）─► 當天新的 A 類國外職缺 ─► Claude 批次評分
   每 10 分鐘  ─► batch（batch-check）─► 批次做完了 → 存評分 → Telegram 總表
   週日 07:00  ─► sync ×3 ─► 下載公開看板清單 ─► 把新看板加進 boards
+  週日 20:00  ─► digest（weekly）─► 這週的新職缺、104 配對信、聯絡、投遞 ─► Telegram
 
 104 配對信 ─► Outlook 轉寄 ─► SES 收信 ─► S3 mail 桶 ─► ingest ─► jobs（職缺、聯絡）
 LinkedIn 職缺配對通知 ─► Gmail 篩選器轉寄 ─┘（連結裡的一次性登入碼不保留，只留職缺編號）
@@ -42,7 +94,9 @@ LinkedIn 職缺配對通知 ─► Gmail 篩選器轉寄 ─┘（連結裡的�
   ─► Function URL（公開網址，靠共享密鑰）─► clip
         POST /       這一頁 ─► Claude ─► Telegram 評分；jobs 存 assess#；S3 存 jd/
         GET  /jobs   某天起的 104 職缺，讓擴充功能一次開啟
-        POST /batch  開著的 104 分頁 ─► Claude Message Batch（半價）─► 由 batch-check 收尾
+        POST /batch  開著的 104、LinkedIn 分頁 ─► Claude Message Batch（半價）─► 由 batch-check 收尾
+        POST /applied  104「應徵成功」頁 ─► jobs 存 104-applied#（評分、總表、日報據此標 ⛔／⚠️）
+        POST /telegram  Telegram 按鈕（評分下面的標記）─► jobs 存使用者的標記
   Telegram「帶入應徵」連結 ─► 104 應徵視窗 ─► 擴充功能選好履歷、寫好推薦信（送出由人按）
 
 CloudWatch 告警 ─► SNS ─► Email，以及 alarm 函式 ─► Telegram
@@ -51,7 +105,45 @@ CloudWatch 告警 ─► SNS ─► Email，以及 alarm 函式 ─► Telegram
 
 7 個 Lambda（scan、digest、sync、ingest、clip、batch、alarm）用同一個 Go 執行檔，但各自有不同的觸發方式、逾時設定和 IAM 權限。
 
+### 2.3 批次評分的一次完整流程
+
+最複雜的一條路：從按下「批次送到雷達」，到 Telegram 收到總表。對應 ADR 15～17、19。
+
+```mermaid
+sequenceDiagram
+  actor U as 使用者
+  participant E as 擴充功能
+  participant C as clip
+  participant A as Claude（Message Batches）
+  participant D as DynamoDB jobs
+  participant B as batch（每 10 分鐘）
+  participant T as Telegram
+
+  U->>E: 按「批次送到雷達」
+  E->>C: POST /batch（開著的職缺頁、共享密鑰）
+  C->>C: 規則先排除（職稱、地點、薪資）；兩週內同一版評過的略過
+  C->>A: 送出一個批次（半價）
+  C->>D: 存批次紀錄（pending = batch）
+  C-->>E: 202：收到幾頁、送 AI 幾頁
+  loop 每 10 分鐘
+    B->>D: pending-index 有沒有未完成的批次？
+    B->>A: 做完了嗎？
+  end
+  B->>A: 讀每一頁的結果
+  alt 成功
+    B->>D: 存評分（附評分檔案版本、commit）
+  else 暫時或不明的錯誤（最多 2 次）
+    B->>A: 用保存的 JD 重新送一批
+  else 永久錯誤，或重試用完
+    B->>B: 進 DLQ（告警）
+  end
+  B->>D: 讀已投紀錄，比對公司
+  B->>T: 總表（分數、⛔／⚠️、花費）
+```
+
 ## 3. 元件、用意與權衡
+
+每一條的完整理由、當時的實測數字和沒選的做法，見 [ADR 索引](adr/README.md)。
 
 | 元件 | 用意 | 權衡 |
 |---|---|---|
@@ -69,6 +161,8 @@ CloudWatch 告警 ─► SNS ─► Email，以及 alarm 函式 ─► Telegram
 | Claude：一個工具、固定 JSON 格式 | 職缺頁面是不可信的輸入；模型只能呼叫「記錄評分」這個工具回答，每個值都會檢查，它不能做任何動作 | 每頁約 0.02～0.04 美元；結果是判斷不是事實，所以附上原文引用，JD 也存一年供對照 |
 | Message Batches | 半價，可以一次送幾十頁 | 最久 24 小時；Anthropic 不會主動通知，所以每 10 分鐘輪詢一次 |
 | SNS → alarm 函式 → Telegram | 告警直接到手機，Email 當備援 | 多一個函式；它自己壞了，要靠 Email 才知道 |
+| GitHub Actions＋OIDC＋人工核准 | 不存 AWS 金鑰；部署前一定有人看過 plan；部署完印出每個函式跑哪個 commit | 公開的 Actions 日誌要遮掉帳號 ID 等值；部署要等人按核准 |
+| 已投紀錄放在 jobs 表、讀出來比對 | 不開新表、不加權限；剛投的馬上生效 | 公司名稱用文字比對，104 和 LinkedIn 名稱不同時對不到；要做完整求職漏斗時再評估 PostgreSQL |
 
 **Go 程式的分層**：`ats`（每家 ATS 一個轉接器）→ `fetch`（HTTP 規則）→ `filter`（篩選規則）→ `store`（介面，有本機 JSON 和 DynamoDB 兩種實作）→ `app`（用例）。104 的信由 `mailin`（原始信件、寄件人檢查）和 `alert104`（職缺與聯絡）讀；`assess` 呼叫 Claude；`pages` 存取 S3 裡的頁面；`version` 說明正在跑的是哪個 commit。CLI 和 Lambda 呼叫同一份 `app`，所以本機能跑，就代表雲端的邏輯也是對的。只用標準庫加官方 SDK，沒有用 Web 框架或 ORM。
 
@@ -77,7 +171,7 @@ CloudWatch 告警 ─► SNS ─► Email，以及 alarm 函式 ─► Telegram
 | 表 | 主鍵 | 重點 |
 |---|---|---|
 | boards | `ats` + `slug` | status（unknown／ok／failing／dead）、consecutive_404、last_checked_at、last_ok_at |
-| jobs | `key` = `ats#slug#id` | 只存通過職稱篩選的職缺。寫入條件是 `attribute_not_exists`。另有稀疏索引 `pending-index`：只有待通知的職缺帶有 `pending` 欄位；索引 `source-index`（`ats`、`first_seen`）依來源和時間列出所有職缺，擴充功能用它列出某天起的 104 職缺，日報用它列出被規則排除的。同一張表也存評分結果（`assess#…`）和批次（`batch#…`，等待總表時 `pending` 為 `batch`，batch 函式每 10 分鐘從 `pending-index` 找出來） |
+| jobs | `key` = `ats#slug#id` | 只存通過職稱篩選的職缺。寫入條件是 `attribute_not_exists`。另有稀疏索引 `pending-index`：只有待通知的職缺帶有 `pending` 欄位；索引 `source-index`（`ats`、`first_seen`）依來源和時間列出所有職缺，擴充功能用它列出某天起的 104 職缺，日報用它列出被規則排除的。同一張表也存評分結果（`assess#…`）、批次（`batch#…`，等待總表時 `pending` 為 `batch`，batch 函式每 10 分鐘從 `pending-index` 找出來）和投遞紀錄（`104-applied#代碼`，`ats` 是 `104-applied`、`board` 是公司名稱） |
 | runs | `pk="run"` + `sk=開始時間#ats#task` | 各種結果的計數、新增數、待通知數、狀態；`expires_at` 到期自動刪除 |
 
 評分結果（`assess#…`）的 `jd` 欄位指向 S3 pages 桶裡被評的那一頁：104 職缺是 `jd/104/<代碼>.json`，其他網站是 `jd/web/<網址雜湊>.json`，保存一年，用來對照 AI 的判斷和 JD 原文，也當評估集。每筆評分也記下用什麼評的：`profile_version` 是 SSM 裡評分檔案的版本，`commit` 是提示詞和分數規則所在的程式；批次送出和讀回答之間如果有部署，寫成 `舊→新`。Telegram 每則評分最後一行「🔖 評分檔案 v2｜程式 54efb96」顯示的就是這兩個（2026-10-29 之後的評分才有）。批次遇到兩週內評過的職缺，只有評分檔案是同一版才略過；換版後（或舊紀錄沒有版本）會重評。整批送出的原始頁面在 `batches/`，保存 30 天。掃描時，會通知的國外職缺頁面也存在 `jd/`；每天 08:50 batch 函式把前一天新出現的 A 類職缺（技能分高的先，最多 `assess.board_daily_max` 個）送 AI 批次評分，總表跟手動批次一樣由 batch-check 送出。
@@ -137,6 +231,11 @@ Claude 另外計費（Anthropic）：單頁約 0.02～0.04 美元，批次半價
 | 送到雷達：單頁評分、批次評分、帶入應徵 | ✅ 2026-10-21～23 |
 | 告警到 Telegram、版本與部署防呆、早上提醒、JD 保存、評估集、國外職缺 AI 評分 | ✅ 2026-10-23～25 |
 | 錯誤分級、自動重試、DLQ、卡住提醒；背景函式失敗也進 DLQ；`make dlq`、`make redrive` | ✅ 2026-10-28 |
-| GitHub Actions：PR 自動 plan、按鈕加核准部署（OIDC，沒有存 AWS 金鑰） | 程式已寫，一次性設定後啟用（見 DEPLOY） |
+| Telegram 標記按鈕、週報 | ✅ 2026-10-25 |
+| GitHub Actions：PR 自動 plan、按鈕加核准部署（OIDC，沒有存 AWS 金鑰） | ✅ 2026-10-29 啟用 |
+| 自動記錄投遞（104「應徵成功」頁） | ✅ 2026-10-28 |
+| 每筆評分記評分檔案版本和 commit；換版重評 | ✅ 2026-10-29～30 |
+| LinkedIn 職缺通知（Gmail 轉寄） | ✅ 2026-11-04 |
+| 已投提醒（⛔ 同一個職缺、⚠️ 同一家公司）、匯入舊投遞 | ✅ 2026-11-05 |
 | 測試環境 | 未做 |
 | Workday | 未做 |
