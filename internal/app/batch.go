@@ -199,7 +199,7 @@ func SubmitPages(ctx context.Context, d Deps, a BatchAssessor, n notify.Notifier
 	r := BatchReceipt{Received: len(pages), Submitted: len(items), Excluded: len(b.Excluded), Skipped: len(b.Skipped)}
 
 	if len(items) == 0 {
-		return r, n.Send(ctx, BuildBatchSummary(b, nil, assess.Usage{}))
+		return r, n.Send(ctx, BuildBatchSummary(b, nil, assess.Usage{}, Applied{}))
 	}
 	id, err := a.Submit(ctx, profile.Text, items)
 	if err != nil {
@@ -229,6 +229,11 @@ func BuildBatchReceipt(r BatchReceipt) string {
 func CheckBatches(ctx context.Context, d Deps, a BatchAssessor, n notify.Notifier, open []store.Batch, retry Retry) (int, error) {
 	var errs []error
 	closed := 0
+	// A failure to read the applications only loses the notes.
+	applied, err := LoadApplied(ctx, d)
+	if err != nil {
+		d.Log.Error("batch: read applications", "err", err)
+	}
 	for _, b := range open {
 		ended, err := a.Ended(ctx, b.BatchID)
 		if err != nil {
@@ -246,7 +251,7 @@ func CheckBatches(ctx context.Context, d Deps, a BatchAssessor, n notify.Notifie
 		}
 		done, total := d.storeResults(ctx, b, results)
 		d.handleFailures(ctx, a, retry, b, done)
-		summary := BuildBatchSummary(b, done, total) + "\n" + rulesLine(b.ProfileVersion, judgedWith(b.Commit, d.Commit))
+		summary := BuildBatchSummary(b, done, total, applied) + "\n" + rulesLine(b.ProfileVersion, judgedWith(b.Commit, d.Commit))
 		if err := sendWithButtons(ctx, n, summary, batchLabelRows(done)); err != nil {
 			errs = append(errs, fmt.Errorf("send batch %s summary: %w", b.BatchID, err))
 			continue
@@ -310,8 +315,9 @@ func (d Deps) storeResults(ctx context.Context, b store.Batch, results []assess.
 
 // BuildBatchSummary renders one Telegram message for a batch (HTML parse
 // mode): the jobs worth applying to in full, every other one on a line, the
-// pages left out with why, and what the batch cost.
-func BuildBatchSummary(b store.Batch, results []batchResult, u assess.Usage) string {
+// pages left out with why, and what the batch cost. Each job applied to, or
+// at a company applied to, says so.
+func BuildBatchSummary(b store.Batch, results []batchResult, u assess.Usage, applied Applied) string {
 	e := html.EscapeString
 	var ok, failed []batchResult
 	for _, j := range results {
@@ -335,7 +341,7 @@ func BuildBatchSummary(b store.Batch, results []batchResult, u assess.Usage) str
 	if good := byVerdict["建議投"]; len(good) > 0 {
 		fmt.Fprintf(&s, "\n<b>🟢 建議投：%d</b>\n", len(good))
 		for _, j := range good {
-			fmt.Fprintf(&s, "\n%s\n", BuildAssessment(j.item.URL, j.a))
+			fmt.Fprintf(&s, "\n%s\n", BuildAssessment(j.item.URL, j.a, applied.Note(j.item.Key, j.a.Company)))
 		}
 	}
 	for _, v := range []struct{ verdict, head string }{{"可考慮", "🟡 可考慮"}, {"不建議", "🔴 不建議"}} {
@@ -347,6 +353,9 @@ func BuildBatchSummary(b store.Batch, results []batchResult, u assess.Usage) str
 		for _, j := range group {
 			fmt.Fprintf(&s, "[%d] <a href=\"%s\">%s</a>｜%s｜%s", j.a.Score, e(j.item.URL), e(titleOr(j.a.JobTitle, j.item.Title)),
 				e(j.a.Company), e(truncate(j.a.Reason, 40)))
+			if note := applied.Note(j.item.Key, j.a.Company); note != "" {
+				fmt.Fprintf(&s, "｜%s", e(note))
+			}
 			if len(j.a.ApplyNotes) > 0 {
 				fmt.Fprintf(&s, "｜📌 %s", e(strings.Join(j.a.ApplyNotes, "；")))
 			}

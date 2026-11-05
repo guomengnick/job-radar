@@ -56,7 +56,12 @@ func Digest(ctx context.Context, d Deps, n notify.Notifier, o DigestOptions) (st
 	// so the user can check what the rules drop. Failing to read them only
 	// costs that part of the message.
 	left, leftErr := leftOutAlertJobs(ctx, d, now.Add(-o.Window))
-	msg := BuildDigest(now.In(o.Location), runs, shown, left, len(pending)-len(shown), o.ExpectedATS)
+	// Likewise the applications: without them the jobs carry no 已投 note.
+	applied, appliedErr := LoadApplied(ctx, d)
+	if appliedErr != nil {
+		d.Log.Error("digest: read applications", "err", appliedErr)
+	}
+	msg := BuildDigest(now.In(o.Location), runs, shown, left, len(pending)-len(shown), o.ExpectedATS, applied)
 	if leftErr != nil {
 		d.Log.Error("digest: list left-out 104 jobs", "err", leftErr)
 		msg += "\n⚠️ 沒列出的 104 職缺讀取失敗，原因見 CloudWatch。"
@@ -98,8 +103,9 @@ func leftOutAlertJobs(ctx context.Context, d Deps, since time.Time) ([]store.Job
 }
 
 // BuildDigest renders the Telegram message (HTML parse mode). left holds the
-// 104 alert jobs the digest does not send, listed one line each.
-func BuildDigest(now time.Time, runs []store.Run, jobs, left []store.JobRecord, more int, expected []string) string {
+// 104 alert jobs the digest does not send, listed one line each. A job
+// applied to, or at a company applied to, says so under its company.
+func BuildDigest(now time.Time, runs []store.Run, jobs, left []store.JobRecord, more int, expected []string, applied Applied) string {
 	src := splitBySource(jobs)
 	boardJobs, alertJobs, contacts := src.board, src.alert, src.contacts
 	var b strings.Builder
@@ -164,6 +170,7 @@ func BuildDigest(now time.Time, runs []store.Run, jobs, left []store.JobRecord, 
 		fmt.Fprintf(&b, "\n[%s 技能%d] <a href=\"%s\">%s</a>\n%s｜%s\n",
 			j.Class, j.Score, html.EscapeString(j.URL), html.EscapeString(j.Title),
 			html.EscapeString(j.Board), html.EscapeString(truncate(j.Location, 80)))
+		writeApplied(&b, applied, j)
 		if len(j.Skills) > 0 {
 			fmt.Fprintf(&b, "技能：%s\n", html.EscapeString(strings.Join(j.Skills, "、")))
 		}
@@ -176,6 +183,7 @@ func BuildDigest(now time.Time, runs []store.Run, jobs, left []store.JobRecord, 
 		fmt.Fprintf(&b, "\n[%s 技能%d] <a href=\"%s\">%s</a>\n%s｜%s｜%s\n",
 			j.Class, j.Score, html.EscapeString(j.URL), html.EscapeString(j.Title),
 			html.EscapeString(j.Board), html.EscapeString(j.Location), html.EscapeString(j.Salary))
+		writeApplied(&b, applied, j)
 		if len(j.Skills) > 0 {
 			fmt.Fprintf(&b, "技能：%s\n", html.EscapeString(strings.Join(j.Skills, "、")))
 		}
@@ -183,7 +191,7 @@ func BuildDigest(now time.Time, runs []store.Run, jobs, left []store.JobRecord, 
 			fmt.Fprintf(&b, "注意：%s\n", html.EscapeString(strings.Join(j.Notes, "、")))
 		}
 	}
-	writeLinkedIn(&b, src.linkedin)
+	writeLinkedIn(&b, src.linkedin, applied)
 	writeLeftOut(&b, left)
 	if more > 0 {
 		fmt.Fprintf(&b, "\n另有 %d 筆留到下次。\n", more)
@@ -222,15 +230,24 @@ func splitBySource(jobs []store.JobRecord) sources {
 // writeLinkedIn lists the LinkedIn alert jobs worth a look. The mail gives
 // no description or pay, so each shows where LinkedIn says it is done from
 // and what is still to check.
-func writeLinkedIn(b *strings.Builder, jobs []store.JobRecord) {
+func writeLinkedIn(b *strings.Builder, jobs []store.JobRecord, applied Applied) {
 	if len(jobs) == 0 {
 		return
 	}
 	fmt.Fprintf(b, "\n<b>LinkedIn 職缺配對通知：%d 筆</b>\n", len(jobs))
 	for _, j := range jobs {
-		fmt.Fprintf(b, "\n[%s 技能%d] <a href=\"%s\">%s</a>\n%s｜%s\n判斷：%s\n",
+		fmt.Fprintf(b, "\n[%s 技能%d] <a href=\"%s\">%s</a>\n%s｜%s\n",
 			j.Class, j.Score, html.EscapeString(j.URL), html.EscapeString(j.Title),
-			html.EscapeString(j.Board), html.EscapeString(j.Location), reasonText(j.Reason))
+			html.EscapeString(j.Board), html.EscapeString(j.Location))
+		writeApplied(b, applied, j)
+		fmt.Fprintf(b, "判斷：%s\n", reasonText(j.Reason))
+	}
+}
+
+// writeApplied adds the line saying a job, or its company, was applied to.
+func writeApplied(b *strings.Builder, applied Applied, j store.JobRecord) {
+	if note := applied.Note(j.Key, j.Board); note != "" {
+		fmt.Fprintf(b, "%s\n", html.EscapeString(note))
 	}
 }
 

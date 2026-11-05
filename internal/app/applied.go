@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"html"
 	"strings"
+	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/guomengnick/job-radar/internal/notify"
 	"github.com/guomengnick/job-radar/internal/store"
@@ -52,4 +55,105 @@ func RecordApplication(ctx context.Context, d Deps, n notify.Notifier, a Applica
 		d.Log.Error("send applied note", "err", err)
 	}
 	return true, nil
+}
+
+// Applied is what the user applied to, for marking a job, or another job at
+// the same company, wherever one is shown: a judgement, a batch summary, the
+// digest. It holds every application record; there are a few hundred at
+// most, so they are read whole and matched in memory rather than indexed by
+// company.
+type Applied struct {
+	byJob     map[string]store.JobRecord   // by the 104 job key (alertATS#code)
+	byCompany map[string][]store.JobRecord // by companyKey
+}
+
+// minCompanyRunes is the shortest company name matched: a shorter one (a
+// bare 科技) would match too many.
+const minCompanyRunes = 3
+
+// LoadApplied reads every application on record.
+func LoadApplied(ctx context.Context, d Deps) (Applied, error) {
+	recs, err := d.Store.JobsSince(ctx, appliedATS, time.Time{})
+	if err != nil {
+		return Applied{}, fmt.Errorf("applications: %w", err)
+	}
+	return NewApplied(recs), nil
+}
+
+// NewApplied indexes application records; the zero Applied knows none.
+func NewApplied(recs []store.JobRecord) Applied {
+	a := Applied{byJob: map[string]store.JobRecord{}, byCompany: map[string][]store.JobRecord{}}
+	for _, r := range recs {
+		a.byJob[alertATS+"#"+strings.TrimPrefix(r.Key, appliedATS+"#")] = r
+		if c := companyKey(r.Board); utf8.RuneCountInString(c) >= minCompanyRunes {
+			a.byCompany[c] = append(a.byCompany[c], r)
+		}
+	}
+	return a
+}
+
+// Note says when this job (by its job key) or the latest job at the same
+// company was applied to, or "" if neither was. Companies match when one
+// name, normalized, contains the other: 104 writes 準進科技有限公司 where a
+// judgement reads 準進科技. Names across sites (凱納, Hyena) do not match.
+func (a Applied) Note(jobKey, company string) string {
+	if r, ok := a.byJob[jobKey]; ok {
+		return fmt.Sprintf("⛔ 這個職缺 %s 已投過", appliedDay(r.FirstSeen))
+	}
+	c := companyKey(company)
+	if utf8.RuneCountInString(c) < minCompanyRunes {
+		return ""
+	}
+	var same []store.JobRecord
+	for k, rs := range a.byCompany {
+		if strings.Contains(k, c) || strings.Contains(c, k) {
+			same = append(same, rs...)
+		}
+	}
+	if len(same) == 0 {
+		return ""
+	}
+	last := same[0]
+	for _, r := range same[1:] {
+		if r.FirstSeen.After(last.FirstSeen) {
+			last = r
+		}
+	}
+	note := fmt.Sprintf("⚠️ 此公司 %s 投過：%s", appliedDay(last.FirstSeen), truncate(titleOr(last.Title, last.URL), 40))
+	if len(same) > 1 {
+		note += fmt.Sprintf("（共 %d 個職缺）", len(same))
+	}
+	return note
+}
+
+// taiwanTime shows dates as the user saw them on 104. Taiwan keeps no
+// daylight saving, so a fixed zone needs no time zone database.
+var taiwanTime = time.FixedZone("CST", 8*60*60)
+
+func appliedDay(t time.Time) string { return t.In(taiwanTime).Format("01/02") }
+
+// legalForms end a registered company name; what follows them (台中分公司,
+// 台灣分公司) names a branch of the same company.
+var legalForms = []string{"股份有限公司", "有限公司"}
+
+// companyKey normalizes a company name for matching: full-width letters made
+// half-width, spaces dropped, lower case, and the legal form and anything
+// after it cut. What is left before it (美商、an English name and "_")
+// stays: matching by containment already sees past it.
+func companyKey(s string) string {
+	s = strings.Map(func(r rune) rune {
+		switch {
+		case r >= '！' && r <= '～':
+			return unicode.ToLower(r - 0xFEE0)
+		case unicode.IsSpace(r):
+			return -1
+		}
+		return unicode.ToLower(r)
+	}, s)
+	for _, f := range legalForms {
+		if i := strings.Index(s, f); i > 0 {
+			s = s[:i]
+		}
+	}
+	return s
 }

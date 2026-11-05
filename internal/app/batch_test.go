@@ -215,7 +215,7 @@ func TestBatchSummaryApplyLinks(t *testing.T) {
 		{item: item("ccc01"), a: assess.Assessment{JobTitle: "資料", Score: 54, Verdict: "不建議", Resume: "B"}},
 		{item: item("ddd01"), a: assess.Assessment{JobTitle: "全端", Score: 60, Verdict: "可考慮", Resume: "A",
 			ApplyNotes: []string{"請到官網應徵", "附作品網址"}, ApplyElsewhere: true}},
-	}, assess.Usage{})
+	}, assess.Usage{}, Applied{})
 	for _, want := range []string{
 		`<a href="https://www.104.com.tw/job/aaa01?apply=form#radar-apply?cv=A">帶入應徵</a>`,
 		`[72] <a href="https://www.104.com.tw/job/bbb01">平台</a>｜｜｜<a href="https://www.104.com.tw/job/bbb01?apply=form#radar-apply?cv=B%2BML">帶入應徵</a>` + "\n",

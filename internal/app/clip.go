@@ -70,7 +70,12 @@ func Clip(ctx context.Context, d Deps, a Assessor, n notify.Notifier, archive Pa
 	if row := LabelButtons(key); row != nil {
 		rows = [][]notify.Button{row}
 	}
-	msg := BuildAssessment(u.String(), j) + "\n" + usageLine(d.Cfg.Assess.Model, usage, false) + "\n" + rulesLine(profile.Version, d.Commit)
+	// A failure to read the applications only loses the note.
+	applied, err := LoadApplied(ctx, d)
+	if err != nil {
+		d.Log.Error("clip: read applications", "err", err)
+	}
+	msg := BuildAssessment(u.String(), j, applied.Note(key, j.Company)) + "\n" + usageLine(d.Cfg.Assess.Model, usage, false) + "\n" + rulesLine(profile.Version, d.Commit)
 	if err := sendWithButtons(ctx, n, msg, rows); err != nil {
 		return j, fmt.Errorf("send assessment: %w", err)
 	}
@@ -105,7 +110,8 @@ var verdictIcons = map[string]string{"建議投": "🟢", "可考慮": "🟡", "
 // BuildAssessment renders the Telegram reply (HTML parse mode). Every field
 // came from the model reading a third-party page, so all of it is escaped.
 // The cover-letter sentence is in <code>, which Telegram copies on a tap.
-func BuildAssessment(pageURL string, j assess.Assessment) string {
+// applied is Applied.Note for the job, shown under the title.
+func BuildAssessment(pageURL string, j assess.Assessment, applied string) string {
 	e := html.EscapeString
 	title := j.JobTitle
 	if title == "" {
@@ -114,6 +120,9 @@ func BuildAssessment(pageURL string, j assess.Assessment) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s <b>%d 分｜%s</b>\n", verdictIcons[j.Verdict], j.Score, e(j.Verdict))
 	fmt.Fprintf(&b, "<a href=\"%s\">%s</a>｜%s\n", e(pageURL), e(title), e(j.Company))
+	if applied != "" {
+		fmt.Fprintf(&b, "%s\n", e(applied))
+	}
 	// What the posting asks of an application goes first: it decides how
 	// (and whether) to apply.
 	if len(j.ApplyNotes) > 0 {
