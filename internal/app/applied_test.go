@@ -57,6 +57,7 @@ func TestAppliedNote(t *testing.T) {
 		applied("9aaa2", "國泰金控_國泰金融控股股份有限公司", "Senior ML Engineer", day.Add(2*time.Hour)),
 		applied("95o88", "美商山嵐發現有限公司台灣分公司", "Senior Backend Data Engineer", day),
 		applied("96t7l", "裕榮昌科技股份有限公司台中分公司", "AI工程師", day),
+		applied("8o40d", "凱納股份有限公司", "Backend Engineer", day),
 	})
 	for _, c := range []struct{ key, company, want string }{
 		{"104#8abc1", "準進科技", "⛔ 這個職缺 10/20 已投過"},
@@ -64,8 +65,11 @@ func TestAppliedNote(t *testing.T) {
 		{"", "國泰金控", "⚠️ 此公司 10/21 投過：Senior ML Engineer（共 2 個職缺）"},
 		{"", "山嵐發現", "⚠️ 此公司 10/20 投過：Senior Backend Data Engineer"},
 		{"", "裕榮昌科技股份有限公司", "⚠️ 此公司 10/20 投過：AI工程師"},
-		{"", "ＳＡＮＤＬＩＮＥ", ""}, // names across sites do not match
-		{"", "科技", ""},       // too short to match
+		{"", "ＳＡＮＤＬＩＮＥ", ""},                                 // names across sites do not match
+		{"", "凱納股份有限公司", "⚠️ 此公司 10/20 投過：Backend Engineer"}, // equal names match at any length
+		{"", "凱納", "⚠️ 此公司 10/20 投過：Backend Engineer"},
+		{"", "凱納科技", ""}, // contains 凱納, too short to match by containment
+		{"", "科技", ""},
 		{"104#zzz01", "", ""},
 	} {
 		if got := a.Note(c.key, c.company); got != c.want {
