@@ -59,6 +59,9 @@ commands:
                found in the batches still archived (30 days)
   labels       print a labels file for eval: the jobs judged from the
                archived batches, best first, with want left for you to fill
+  applied-import  record applications made before the extension recorded
+               them: a tab-separated file of time (Taiwan, 2006-01-02 15:04),
+               job code (may be empty), company, title
   dlq          list what is in the dead-letter queue
   redrive      send the dead letters again, after a yes: failed runs are
                started again, judgements go out as one new batch
@@ -173,6 +176,24 @@ func run(ctx context.Context, log *slog.Logger, cmd string, args []string, state
 			fmt.Printf("%s: %s (%s), sender %s, jobs %d, new %d, to send %d\n",
 				path, o.Status, o.Reason, o.Sender, o.Jobs, o.New, o.Pending)
 		}
+	case "applied-import":
+		if len(args) != 1 {
+			return fmt.Errorf("applied-import needs one file")
+		}
+		f, err := os.Open(args[0])
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		apps, err := app.ParseApplications(f)
+		if err != nil {
+			return err
+		}
+		added, err := app.ImportApplications(ctx, d, apps)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("%d applications read, %d new\n", len(apps), added)
 	case "eval":
 		return evaluate(ctx, d, labels, profilePath)
 	case "dlq", "redrive":
