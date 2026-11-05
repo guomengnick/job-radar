@@ -1,10 +1,16 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/guomengnick/job-radar/internal/assess"
+	"github.com/guomengnick/job-radar/internal/notify"
+	"github.com/guomengnick/job-radar/internal/store"
 )
 
 func TestRecordApplication(t *testing.T) {
@@ -34,5 +40,86 @@ func TestRecordApplication(t *testing.T) {
 		if _, err := RecordApplication(ctx, d, tg, Application{Code: code}); !errors.Is(err, ErrBadApplication) {
 			t.Errorf("%q: err = %v", code, err)
 		}
+	}
+}
+
+func applied(code, company, title string, at time.Time) store.JobRecord {
+	return store.JobRecord{Key: appliedATS + "#" + code, ATS: appliedATS, Board: company, Title: title,
+		URL: "https://www.104.com.tw/job/" + code, FirstSeen: at, State: store.JobSeen}
+}
+
+func TestAppliedNote(t *testing.T) {
+	day := time.Date(2026, 10, 20, 14, 37, 0, 0, time.UTC) // 22:37 in Taiwan
+	a := NewApplied([]store.JobRecord{
+		applied("8abc1", "準進科技有限公司", "資深軟體工程師(C#)", day),
+		applied("9aaa1", "國泰金控_國泰金融控股股份有限公司", "Sr. Data R&D Engineer", day),
+		// 00:30 the next day in Taiwan: the date is Taiwan's.
+		applied("9aaa2", "國泰金控_國泰金融控股股份有限公司", "Senior ML Engineer", day.Add(2*time.Hour)),
+		applied("95o88", "美商山嵐發現有限公司台灣分公司", "Senior Backend Data Engineer", day),
+		applied("96t7l", "裕榮昌科技股份有限公司台中分公司", "AI工程師", day),
+	})
+	for _, c := range []struct{ key, company, want string }{
+		{"104#8abc1", "準進科技", "⛔ 這個職缺 10/20 已投過"},
+		{"104#8zzz9", "準進科技有限公司", "⚠️ 此公司 10/20 投過：資深軟體工程師(C#)"},
+		{"", "國泰金控", "⚠️ 此公司 10/21 投過：Senior ML Engineer（共 2 個職缺）"},
+		{"", "山嵐發現", "⚠️ 此公司 10/20 投過：Senior Backend Data Engineer"},
+		{"", "裕榮昌科技股份有限公司", "⚠️ 此公司 10/20 投過：AI工程師"},
+		{"", "ＳＡＮＤＬＩＮＥ", ""}, // names across sites do not match
+		{"", "科技", ""},       // too short to match
+		{"104#zzz01", "", ""},
+	} {
+		if got := a.Note(c.key, c.company); got != c.want {
+			t.Errorf("Note(%q, %q) = %q, want %q", c.key, c.company, got, c.want)
+		}
+	}
+	if got := (Applied{}).Note("104#8abc1", "準進科技"); got != "" {
+		t.Errorf("no applications: %q", got)
+	}
+}
+
+func TestCompanyKey(t *testing.T) {
+	for in, want := range map[string]string{
+		"準進科技有限公司":                            "準進科技",
+		"寶凱電子企業股份有限公司":                        "寶凱電子企業",
+		"裕榮昌科技股份有限公司台中分公司":                    "裕榮昌科技",
+		"Ｈｙｅｎａ　Ｉｎｃ．":                          "hyenainc.",
+		"Tata Consultancy_印度商塔塔顧問服務有限公司台灣分公司": "tataconsultancy_印度商塔塔顧問服務",
+	} {
+		if got := companyKey(in); got != want {
+			t.Errorf("companyKey(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestClipNotesAnApplication(t *testing.T) {
+	ctx := context.Background()
+	d, _, st, clk := setup(t)
+	st.InsertJobIfNew(ctx, applied("bbb02", "範例科技有限公司", "韌體工程師", clk.t.Add(-48*time.Hour)))
+	var out bytes.Buffer
+	page := assess.Page{URL: "https://www.104.com.tw/job/aaa01", Title: "t", Text: "工作內容"}
+	if _, err := Clip(ctx, d, &fakeAssessor{out: judged}, notify.Writer{W: &out}, &memArchive{}, Profile{}, page); err != nil {
+		t.Fatal(err)
+	}
+	want := "｜範例科技\n⚠️ 此公司 10/10 投過：韌體工程師\n"
+	if !strings.Contains(out.String(), want) {
+		t.Errorf("reply missing %q:\n%s", want, out.String())
+	}
+}
+
+func TestDigestNotesApplications(t *testing.T) {
+	ctx := context.Background()
+	d, _, st, clk := setup(t)
+	raw := mailWith(sesDMARCPass, "jobbank@ms1.104.com.tw", "配對日報", alertHTML(t))
+	if _, err := IngestMail(ctx, d, "inbound/k", strings.NewReader(raw)); err != nil {
+		t.Fatal(err)
+	}
+	st.InsertJobIfNew(ctx, applied("aaa01", "範例科技股份有限公司", "資深後端工程師（.NET）", clk.t.Add(-time.Hour)))
+	msg, err := Digest(ctx, d, notify.Writer{W: &bytes.Buffer{}}, DigestOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "範例科技股份有限公司｜台中市西屯區｜月薪 60,000~90,000元\n⛔ 這個職缺 10/12 已投過\n"
+	if !strings.Contains(msg, want) {
+		t.Errorf("digest missing %q:\n%s", want, msg)
 	}
 }

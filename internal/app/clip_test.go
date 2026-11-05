@@ -116,12 +116,12 @@ func TestBuildAssessmentApplyNotes(t *testing.T) {
 	const job = "https://www.104.com.tw/job/aaa01"
 	j := judged
 	j.ApplyNotes = []string{"請附作品網址，沒有請勿應徵"}
-	msg := BuildAssessment(job, j)
+	msg := BuildAssessment(job, j, "")
 	if !strings.Contains(msg, "範例科技\n📌 應徵須知：請附作品網址，沒有請勿應徵\n方向") || !strings.Contains(msg, "帶入應徵") {
 		t.Errorf("the notes come right under the title, and the form can still be filled:\n%s", msg)
 	}
 	j.ApplyNotes, j.ApplyElsewhere = []string{"請到官網 <jobs.example.com> 應徵"}, true
-	msg = BuildAssessment(job, j)
+	msg = BuildAssessment(job, j, "")
 	if !strings.Contains(msg, "📌 應徵須知：請到官網 &lt;jobs.example.com&gt; 應徵") || strings.Contains(msg, "帶入應徵") {
 		t.Errorf("applied for elsewhere: notes escaped, no 帶入應徵:\n%s", msg)
 	}
