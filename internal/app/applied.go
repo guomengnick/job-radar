@@ -67,9 +67,10 @@ type Applied struct {
 	byCompany map[string][]store.JobRecord // by companyKey
 }
 
-// minCompanyRunes is the shortest company name matched: a shorter one (a
-// bare 科技) would match too many.
-const minCompanyRunes = 3
+// minContainedRunes is the shortest company name matched by containment: a
+// shorter one (a bare 科技) would match too many. Equal names match at any
+// length, so 凱納股份有限公司 still finds 凱納.
+const minContainedRunes = 3
 
 // LoadApplied reads every application on record.
 func LoadApplied(ctx context.Context, d Deps) (Applied, error) {
@@ -85,7 +86,7 @@ func NewApplied(recs []store.JobRecord) Applied {
 	a := Applied{byJob: map[string]store.JobRecord{}, byCompany: map[string][]store.JobRecord{}}
 	for _, r := range recs {
 		a.byJob[alertATS+"#"+strings.TrimPrefix(r.Key, appliedATS+"#")] = r
-		if c := companyKey(r.Board); utf8.RuneCountInString(c) >= minCompanyRunes {
+		if c := companyKey(r.Board); c != "" {
 			a.byCompany[c] = append(a.byCompany[c], r)
 		}
 	}
@@ -93,20 +94,21 @@ func NewApplied(recs []store.JobRecord) Applied {
 }
 
 // Note says when this job (by its job key) or the latest job at the same
-// company was applied to, or "" if neither was. Companies match when one
-// name, normalized, contains the other: 104 writes 準進科技有限公司 where a
+// company was applied to, or "" if neither was. Companies match when their
+// normalized names are equal, or when one contains the other and the
+// shorter has minContainedRunes: 104 writes 準進科技有限公司 where a
 // judgement reads 準進科技. Names across sites (凱納, Hyena) do not match.
 func (a Applied) Note(jobKey, company string) string {
 	if r, ok := a.byJob[jobKey]; ok {
 		return fmt.Sprintf("⛔ 這個職缺 %s 已投過", appliedDay(r.FirstSeen))
 	}
 	c := companyKey(company)
-	if utf8.RuneCountInString(c) < minCompanyRunes {
+	if c == "" {
 		return ""
 	}
 	var same []store.JobRecord
 	for k, rs := range a.byCompany {
-		if strings.Contains(k, c) || strings.Contains(c, k) {
+		if k == c || sameCompany(k, c) {
 			same = append(same, rs...)
 		}
 	}
@@ -124,6 +126,15 @@ func (a Applied) Note(jobKey, company string) string {
 		note += fmt.Sprintf("（共 %d 個職缺）", len(same))
 	}
 	return note
+}
+
+// sameCompany reports whether one name contains the other, the shorter
+// being long enough to mean something.
+func sameCompany(a, b string) bool {
+	if utf8.RuneCountInString(a) > utf8.RuneCountInString(b) {
+		a, b = b, a
+	}
+	return utf8.RuneCountInString(a) >= minContainedRunes && strings.Contains(b, a)
 }
 
 // taiwanTime shows dates as the user saw them on 104. Taiwan keeps no
