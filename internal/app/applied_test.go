@@ -17,12 +17,12 @@ func TestRecordApplication(t *testing.T) {
 	ctx := context.Background()
 	d, _, st, clk := setup(t)
 	tg := &sent{}
-	a := Application{Code: "95o88", Title: " 資深後端資料工程師 <Remote> ", Company: "美商山嵐發現有限公司台灣分公司"}
+	a := Application{Code: "9bbb1", Title: " 資深後端資料工程師 <Remote> ", Company: "美商範例雲端有限公司台灣分公司"}
 	first, err := RecordApplication(ctx, d, tg, a)
 	if err != nil || !first {
 		t.Fatalf("first = %v, %v", first, err)
 	}
-	if len(tg.msgs) != 1 || tg.msgs[0] != `📮 已投：<a href="https://www.104.com.tw/job/95o88">資深後端資料工程師 &lt;Remote&gt;</a>｜美商山嵐發現有限公司台灣分公司` {
+	if len(tg.msgs) != 1 || tg.msgs[0] != `📮 已投：<a href="https://www.104.com.tw/job/9bbb1">資深後端資料工程師 &lt;Remote&gt;</a>｜美商範例雲端有限公司台灣分公司` {
 		t.Fatalf("telegram %q", tg.msgs)
 	}
 	// Reopening the confirmation page records and sends nothing.
@@ -31,12 +31,12 @@ func TestRecordApplication(t *testing.T) {
 		t.Fatalf("again = %v, %v, sent %d", again, err, len(tg.msgs))
 	}
 	recs, _ := st.JobsSince(ctx, appliedATS, clk.t.Add(-48*time.Hour))
-	if len(recs) != 1 || recs[0].Key != "104-applied#95o88" || recs[0].Board != "美商山嵐發現有限公司台灣分公司" ||
+	if len(recs) != 1 || recs[0].Key != "104-applied#9bbb1" || recs[0].Board != "美商範例雲端有限公司台灣分公司" ||
 		recs[0].Title != "資深後端資料工程師 <Remote>" || !recs[0].FirstSeen.Equal(clk.t.Add(-time.Hour)) {
 		t.Fatalf("records %+v", recs)
 	}
 	// Not a 104 job: refused, nothing stored.
-	for _, code := range []string{"", "../x", "ABC", "95o88?x=1"} {
+	for _, code := range []string{"", "../x", "ABC", "9bbb1?x=1"} {
 		if _, err := RecordApplication(ctx, d, tg, Application{Code: code}); !errors.Is(err, ErrBadApplication) {
 			t.Errorf("%q: err = %v", code, err)
 		}
@@ -51,24 +51,24 @@ func applied(code, company, title string, at time.Time) store.JobRecord {
 func TestAppliedNote(t *testing.T) {
 	day := time.Date(2026, 10, 20, 14, 37, 0, 0, time.UTC) // 22:37 in Taiwan
 	a := NewApplied([]store.JobRecord{
-		applied("8abc1", "準進科技有限公司", "資深軟體工程師(C#)", day),
-		applied("9aaa1", "國泰金控_國泰金融控股股份有限公司", "Sr. Data R&D Engineer", day),
+		applied("8abc1", "範例精密有限公司", "資深軟體工程師(C#)", day),
+		applied("9aaa1", "範例金控_範例金融控股股份有限公司", "Sr. Data R&D Engineer", day),
 		// 00:30 the next day in Taiwan: the date is Taiwan's.
-		applied("9aaa2", "國泰金控_國泰金融控股股份有限公司", "Senior ML Engineer", day.Add(2*time.Hour)),
-		applied("95o88", "美商山嵐發現有限公司台灣分公司", "Senior Backend Data Engineer", day),
-		applied("96t7l", "裕榮昌科技股份有限公司台中分公司", "AI工程師", day),
-		applied("8o40d", "凱納股份有限公司", "Backend Engineer", day),
+		applied("9aaa2", "範例金控_範例金融控股股份有限公司", "Senior ML Engineer", day.Add(2*time.Hour)),
+		applied("9bbb1", "美商範例雲端有限公司台灣分公司", "Senior Backend Data Engineer", day),
+		applied("9ccc1", "範例光電股份有限公司台中分公司", "AI工程師", day),
+		applied("8ddd1", "甲乙股份有限公司", "Backend Engineer", day),
 	})
 	for _, c := range []struct{ key, company, want string }{
-		{"104#8abc1", "準進科技", "⛔ 這個職缺 10/20 已投過"},
-		{"104#8zzz9", "準進科技有限公司", "⚠️ 此公司 10/20 投過：資深軟體工程師(C#)"},
-		{"", "國泰金控", "⚠️ 此公司 10/21 投過：Senior ML Engineer（共 2 個職缺）"},
-		{"", "山嵐發現", "⚠️ 此公司 10/20 投過：Senior Backend Data Engineer"},
-		{"", "裕榮昌科技股份有限公司", "⚠️ 此公司 10/20 投過：AI工程師"},
-		{"", "ＳＡＮＤＬＩＮＥ", ""},                                 // names across sites do not match
-		{"", "凱納股份有限公司", "⚠️ 此公司 10/20 投過：Backend Engineer"}, // equal names match at any length
-		{"", "凱納", "⚠️ 此公司 10/20 投過：Backend Engineer"},
-		{"", "凱納科技", ""}, // contains 凱納, too short to match by containment
+		{"104#8abc1", "範例精密", "⛔ 這個職缺 10/20 已投過"},
+		{"104#8zzz9", "範例精密有限公司", "⚠️ 此公司 10/20 投過：資深軟體工程師(C#)"},
+		{"", "範例金控", "⚠️ 此公司 10/21 投過：Senior ML Engineer（共 2 個職缺）"},
+		{"", "範例雲端", "⚠️ 此公司 10/20 投過：Senior Backend Data Engineer"},
+		{"", "範例光電股份有限公司", "⚠️ 此公司 10/20 投過：AI工程師"},
+		{"", "ＥＸＡＭＰＬＥ", ""}, // names across sites do not match
+		{"", "甲乙股份有限公司", "⚠️ 此公司 10/20 投過：Backend Engineer"}, // equal names match at any length
+		{"", "甲乙", "⚠️ 此公司 10/20 投過：Backend Engineer"},
+		{"", "甲乙科技", ""}, // contains 甲乙, too short to match by containment
 		{"", "科技", ""},
 		{"104#zzz01", "", ""},
 	} {
@@ -76,18 +76,18 @@ func TestAppliedNote(t *testing.T) {
 			t.Errorf("Note(%q, %q) = %q, want %q", c.key, c.company, got, c.want)
 		}
 	}
-	if got := (Applied{}).Note("104#8abc1", "準進科技"); got != "" {
+	if got := (Applied{}).Note("104#8abc1", "範例精密"); got != "" {
 		t.Errorf("no applications: %q", got)
 	}
 }
 
 func TestCompanyKey(t *testing.T) {
 	for in, want := range map[string]string{
-		"準進科技有限公司":                            "準進科技",
-		"寶凱電子企業股份有限公司":                        "寶凱電子企業",
-		"裕榮昌科技股份有限公司台中分公司":                    "裕榮昌科技",
-		"Ｈｙｅｎａ　Ｉｎｃ．":                          "hyenainc.",
-		"Tata Consultancy_印度商塔塔顧問服務有限公司台灣分公司": "tataconsultancy_印度商塔塔顧問服務",
+		"範例精密有限公司":                              "範例精密",
+		"範例電子企業股份有限公司":                          "範例電子企業",
+		"範例光電股份有限公司台中分公司":                       "範例光電",
+		"Ｅｘａｍｐｌｅ　Ｉｎｃ．":                          "exampleinc.",
+		"Example Consulting_印度商範例顧問服務有限公司台灣分公司": "exampleconsulting_印度商範例顧問服務",
 	} {
 		if got := companyKey(in); got != want {
 			t.Errorf("companyKey(%q) = %q, want %q", in, got, want)
