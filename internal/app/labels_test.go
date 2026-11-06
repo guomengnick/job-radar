@@ -34,8 +34,8 @@ func (a *answers) AnswerCallback(_ context.Context, id, text string) error {
 }
 
 func TestLabelButtons(t *testing.T) {
-	row := LabelButtons("104#7umpg")
-	if len(row) != 3 || row[0].Data != "lbl:7umpg:y" || row[1].Data != "lbl:7umpg:m" || row[2].Data != "lbl:7umpg:n" {
+	row := LabelButtons("104#7eee1")
+	if len(row) != 3 || row[0].Data != "lbl:7eee1:y" || row[1].Data != "lbl:7eee1:m" || row[2].Data != "lbl:7eee1:n" {
 		t.Fatalf("row = %+v", row)
 	}
 	for _, key := range []string{"https://jobs.example.com/p/42", "104#", "104#BAD", "greenhouse#acme#1"} {
@@ -78,7 +78,7 @@ func TestBatchLabelRows(t *testing.T) {
 func TestHandleLabel(t *testing.T) {
 	ctx := context.Background()
 	d, _, st, _ := setup(t)
-	st.SaveAssessment(ctx, store.Assessment{Key: "assess#104#7umpg", Title: "資深軟體工程師", Company: "艾創點", Score: 64, Verdict: "可考慮"})
+	st.SaveAssessment(ctx, store.Assessment{Key: "assess#104#7eee1", Title: "資深軟體工程師", Company: "範例數位", Score: 64, Verdict: "可考慮"})
 	update := func(chat int64, data string) TelegramUpdate {
 		var u TelegramUpdate
 		u.CallbackQuery = &struct {
@@ -99,23 +99,23 @@ func TestHandleLabel(t *testing.T) {
 		return u
 	}
 	a := &answers{}
-	if err := HandleLabel(ctx, d, a, "42", update(42, "lbl:7umpg:y")); err != nil {
+	if err := HandleLabel(ctx, d, a, "42", update(42, "lbl:7eee1:y")); err != nil {
 		t.Fatal(err)
 	}
 	labels, _ := st.Labels(ctx)
-	if len(labels) != 1 || labels[0].Key != "label#104#7umpg" || labels[0].Want != "建議投" ||
-		a.id != "cb1" || a.text != "已記下：你覺得「投」｜艾創點｜AI 64 可考慮" {
+	if len(labels) != 1 || labels[0].Key != "label#104#7eee1" || labels[0].Want != "建議投" ||
+		a.id != "cb1" || a.text != "已記下：你覺得「投」｜範例數位｜AI 64 可考慮" {
 		t.Fatalf("labels %+v, answer %q", labels, a.text)
 	}
 	// Pressing again changes the verdict.
-	HandleLabel(ctx, d, a, "42", update(42, "lbl:7umpg:n"))
+	HandleLabel(ctx, d, a, "42", update(42, "lbl:7eee1:n"))
 	if labels, _ := st.Labels(ctx); len(labels) != 1 || labels[0].Want != "不建議" {
 		t.Errorf("relabelled: %+v", labels)
 	}
 	// The job's own button only says what it is.
 	a = &answers{}
-	HandleLabel(ctx, d, a, "42", update(42, "lbl:7umpg:i"))
-	if a.text != "艾創點｜AI 64 可考慮" {
+	HandleLabel(ctx, d, a, "42", update(42, "lbl:7eee1:i"))
+	if a.text != "範例數位｜AI 64 可考慮" {
 		t.Errorf("info = %q", a.text)
 	}
 	// Another chat, or something that is not a label button, stores nothing.
@@ -131,7 +131,7 @@ func TestHandleLabel(t *testing.T) {
 	}
 	labels, _ = st.Labels(ctx)
 	cases := LabelCases(labels)
-	if len(cases) != 1 || cases[0].Key != "104#7umpg" || cases[0].Want != "不建議" {
+	if len(cases) != 1 || cases[0].Key != "104#7eee1" || cases[0].Want != "不建議" {
 		t.Errorf("cases = %+v", cases)
 	}
 }

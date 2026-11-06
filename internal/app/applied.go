@@ -69,7 +69,7 @@ type Applied struct {
 
 // minContainedRunes is the shortest company name matched by containment: a
 // shorter one (a bare 科技) would match too many. Equal names match at any
-// length, so 凱納股份有限公司 still finds 凱納.
+// length, so 甲乙股份有限公司 still finds 甲乙.
 const minContainedRunes = 3
 
 // LoadApplied reads every application on record.
@@ -96,8 +96,9 @@ func NewApplied(recs []store.JobRecord) Applied {
 // Note says when this job (by its job key) or the latest job at the same
 // company was applied to, or "" if neither was. Companies match when their
 // normalized names are equal, or when one contains the other and the
-// shorter has minContainedRunes: 104 writes 準進科技有限公司 where a
-// judgement reads 準進科技. Names across sites (凱納, Hyena) do not match.
+// shorter has minContainedRunes: 104 writes 範例精密有限公司 where a
+// judgement reads 範例精密. Names across sites (甲乙 on 104, Example on
+// LinkedIn) do not match.
 func (a Applied) Note(jobKey, company string) string {
 	if r, ok := a.byJob[jobKey]; ok {
 		return fmt.Sprintf("⛔ 這個職缺 %s 已投過", appliedDay(r.FirstSeen))
